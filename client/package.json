@@ -1,0 +1,13 @@
+{
+  "name": "@ragdoll/client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "phaser": "^4.2.1",
+    "@ragdoll/shared": "*"
+  }
+}

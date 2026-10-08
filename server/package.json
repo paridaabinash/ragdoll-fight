@@ -1,0 +1,13 @@
+{
+  "name": "@ragdoll/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@ragdoll/shared": "*",
+    "ws": "^8.22.0"
+  }
+}

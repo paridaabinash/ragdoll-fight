@@ -1,0 +1,7 @@
+node_modules/
+dist/
+client/dist/
+logs/*.jsonl
+*.tsbuildinfo
+.claude/scheduled_tasks.lock
+.claude/settings.local.json

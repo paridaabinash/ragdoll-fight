@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Arena Maps</title>
+<style>
+  body { margin: 0; padding: 20px; background: #f5f7f6; color: #10262e; font: 14px system-ui, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  p { margin: 0 0 18px; color: #4f6f63; }
+  .map { background: #fff; border: 1px solid #d6dfdb; border-radius: 8px; padding: 14px; margin-bottom: 22px; overflow-x: auto; }
+  svg { display: block; max-width: 100%; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+  .ok { color: #2e7d32; margin: 8px 0 0; } .bad { color: #c62828; margin: 8px 0 0; }
+  .legend span::before { content: ''; display: inline-block; width: 14px; height: 10px; margin-right: 6px; vertical-align: -1px; border: 1px solid #6d5a4b; background: var(--c); }
+</style></head><body>
+<h1>Arena maps (current)</h1>
+<p>Drawn from the arena data files (shared/src/arenas). Regenerate: <code>npx tsx tools/arena-map.ts</code></p>
+<div class="map legend">
+  <span style="--c:#f7b267">Ground</span><span style="--c:#f3f0ea">Solid block / ledge</span>
+  <span style="--c:#b3e5fc">Ice floor</span><span style="--c:#ff8ac8">Bouncy floor</span><span style="--c:#5d4037">Pit (kill zone)</span>
+  <span style="--c:#c98b4b">Crate (pushable)</span><span style="--c:#43a047">S1-S8 = spawn points (flag points the way they face)</span>
+</div>
+<div class="map"><svg viewBox="0 0 640 394" width="640" height="394" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0 34)">
+<rect width="640" height="360" fill="#cdeee2"/>
+<rect x="2" y="2" width="636" height="356" fill="none" stroke="#7a9c90" stroke-width="1.5" stroke-dasharray="3 5"/>
+<text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">one screen (36 x 20.25 m)</text><text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" fill="#4f6f63">one screen (36 x 20.25 m)</text>
+<rect x="0" y="340" width="640" height="20" fill="#f7b267" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="239" y="280" width="2" height="60" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="400" y="236" width="80" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<text x="320" y="356" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#7a4b16">Ground</text>
+<text x="240" y="275" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Thin wall (0.1 m)</text><text x="240" y="275" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Thin wall (0.1 m)</text>
+<text x="440" y="258" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Platform</text><text x="440" y="258" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Platform</text>
+<rect x="420" y="216" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M420 216 L440 236 M440 216 L420 236" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="420" y="196" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M420 196 L440 216 M440 196 L420 216" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="510" y="320" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M510 320 L530 340 M530 320 L510 340" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<text x="430" y="190" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="430" y="190" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="520" y="314" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="520" y="314" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<circle cx="260" cy="180" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="260" y="169" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="260" y="169" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="380" cy="120" r="7" fill="#ffc400" stroke="#1b1b1b" stroke-width="2"/>
+<text x="380" y="109" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +stamina</text><text x="380" y="109" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +stamina</text>
+<circle cx="320" cy="80" r="11" fill="#ffffff" fill-opacity="0.7" stroke="#1e88e5" stroke-width="2.5"/>
+<text x="320" y="84" style="font: 700 13px system-ui, sans-serif; text-anchor: middle;" fill="#1e88e5">?</text>
+<text x="320" y="64" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Power-up bubble</text><text x="320" y="64" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#1565c0">Power-up bubble</text>
+<line x1="80" y1="340" x2="80" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M80 318 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="85" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S1</text><text x="85" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S1</text>
+<line x1="580" y1="340" x2="580" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M580 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="575" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S2</text><text x="575" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S2</text>
+<line x1="320" y1="340" x2="320" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M320 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="315" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S3</text><text x="315" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S3</text>
+<line x1="160" y1="340" x2="160" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M160 318 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="165" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S4</text><text x="165" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S4</text>
+<line x1="460" y1="340" x2="460" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M460 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="455" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S5</text><text x="455" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S5</text>
+<line x1="40" y1="340" x2="40" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M40 318 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="45" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S6</text><text x="45" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S6</text>
+<line x1="380" y1="340" x2="380" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M380 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="375" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S7</text><text x="375" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S7</text>
+<line x1="610" y1="340" x2="610" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M610 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="605" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S8</text><text x="605" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S8</text>
+</g>
+<text x="0" y="22" style="font: 700 17px system-ui, sans-serif; text-anchor: start;" fill="#10262e">Backyard  ·  32 x 18 m  ·  8 spawns</text>
+</svg><p class="ok">Validator: no problems</p><p class="ok">Reach (jumps 2 places): every place can be reached and left; on two stumps everything in reach</p></div>
+<div class="map"><svg viewBox="0 0 1280 554" width="1280" height="554" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0 34)">
+<rect width="1280" height="520" fill="#cdeee2"/>
+<rect x="2" y="2" width="716" height="401" fill="none" stroke="#7a9c90" stroke-width="1.5" stroke-dasharray="3 5"/>
+<text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">one screen (36 x 20.25 m)</text><text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" fill="#4f6f63">one screen (36 x 20.25 m)</text>
+<rect x="540" y="180" width="200" height="178" fill="#ffffff" fill-opacity="0.45" stroke="#90a4ae" stroke-dasharray="6 4"/>
+<line x1="592" y1="202.3" x2="688" y2="202.3" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="592" y1="246.8" x2="688" y2="246.8" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="592" y1="291.3" x2="688" y2="291.3" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="592" y1="335.8" x2="688" y2="335.8" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="640" y="196" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">WIND PIT: wind right (8 m/s²)</text><text x="640" y="196" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">WIND PIT: wind right (8 m/s²)</text>
+<rect x="560" y="440" width="160" height="60" fill="#5d4037"/>
+<path d="M561 500 L565 492 L569 500 Z" fill="#e57373"/>
+<path d="M571 500 L575 492 L579 500 Z" fill="#e57373"/>
+<path d="M581 500 L585 492 L589 500 Z" fill="#e57373"/>
+<path d="M591 500 L595 492 L599 500 Z" fill="#e57373"/>
+<path d="M601 500 L605 492 L609 500 Z" fill="#e57373"/>
+<path d="M611 500 L615 492 L619 500 Z" fill="#e57373"/>
+<path d="M621 500 L625 492 L629 500 Z" fill="#e57373"/>
+<path d="M631 500 L635 492 L639 500 Z" fill="#e57373"/>
+<path d="M641 500 L645 492 L649 500 Z" fill="#e57373"/>
+<path d="M651 500 L655 492 L659 500 Z" fill="#e57373"/>
+<path d="M661 500 L665 492 L669 500 Z" fill="#e57373"/>
+<path d="M671 500 L675 492 L679 500 Z" fill="#e57373"/>
+<path d="M681 500 L685 492 L689 500 Z" fill="#e57373"/>
+<path d="M691 500 L695 492 L699 500 Z" fill="#e57373"/>
+<path d="M701 500 L705 492 L709 500 Z" fill="#e57373"/>
+<path d="M711 500 L715 492 L719 500 Z" fill="#e57373"/>
+<text x="640" y="486" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">PIT (fall in = ring out)</text>
+<rect x="0" y="440" width="560" height="80" fill="#f7b267" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="560" y="500" width="160" height="20" fill="#f7b267" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="720" y="440" width="560" height="80" fill="#f7b267" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="280" y="420" width="240" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="320" y="400" width="200" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="360" y="380" width="160" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="400" y="360" width="160" height="80" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="760" y="420" width="240" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="760" y="400" width="200" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="760" y="380" width="160" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="720" y="360" width="160" height="80" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="520" y="360" width="100" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="660" y="360" width="100" height="8" fill="#b3e5fc" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="320" y="280" width="120" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="840" y="280" width="120" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="188" y="428" width="32" height="12" fill="#ff8ac8" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="1068" y="400" width="12" height="40" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<text x="280" y="462" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#7a4b16">Ground</text>
+<text x="1000" y="462" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#7a4b16">Ground</text>
+<text x="302" y="434" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 1</text><text x="302" y="434" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 1</text>
+<text x="342" y="414" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 2</text><text x="342" y="414" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 2</text>
+<text x="382" y="394" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 3</text><text x="382" y="394" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 3</text>
+<text x="422" y="404" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 4</text><text x="422" y="404" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 4</text>
+<text x="978" y="434" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 1</text><text x="978" y="434" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 1</text>
+<text x="938" y="414" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 2</text><text x="938" y="414" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 2</text>
+<text x="898" y="394" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 3</text><text x="898" y="394" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 3</text>
+<text x="858" y="404" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Step 4</text><text x="858" y="404" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Step 4</text>
+<text x="570" y="382" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Left bridge</text><text x="570" y="382" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Left bridge</text>
+<text x="710" y="382" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Right bridge (ICE)</text><text x="710" y="382" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Right bridge (ICE)</text>
+<text x="380" y="302" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">High perch</text><text x="380" y="302" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">High perch</text>
+<text x="900" y="302" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">High perch</text><text x="900" y="302" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">High perch</text>
+<text x="204" y="423" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Bouncy block</text><text x="204" y="423" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Bouncy block</text>
+<text x="1074" y="395" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Low cover</text><text x="1074" y="395" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Low cover</text>
+<rect x="50" y="420" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M50 420 L70 440 M70 420 L50 440" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="1090" y="420" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M1090 420 L1110 440 M1110 420 L1090 440" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="1190" y="420" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M1190 420 L1210 440 M1210 420 L1190 440" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<text x="60" y="414" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="60" y="414" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="1100" y="414" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="1100" y="414" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="1200" y="414" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="1200" y="414" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<rect x="284" y="414" width="32" height="6" fill="#ff1744" stroke="#000"/>
+<text x="300" y="408" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Trampoline</text><text x="300" y="408" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#c62828">Trampoline</text>
+<rect x="964" y="414" width="32" height="6" fill="#ff1744" stroke="#000"/>
+<text x="980" y="408" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Trampoline</text><text x="980" y="408" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#c62828">Trampoline</text>
+<rect x="530" y="355" width="80" height="5" fill="#37474f"/>
+<path d="M538 355.5 l5 2 l-5 2" stroke="#ffd600" fill="none" stroke-width="1.5"/>
+<path d="M550 355.5 l5 2 l-5 2" stroke="#ffd600" fill="none" stroke-width="1.5"/>
+<path d="M562 355.5 l5 2 l-5 2" stroke="#ffd600" fill="none" stroke-width="1.5"/>
+<path d="M574 355.5 l5 2 l-5 2" stroke="#ffd600" fill="none" stroke-width="1.5"/>
+<path d="M586 355.5 l5 2 l-5 2" stroke="#ffd600" fill="none" stroke-width="1.5"/>
+<path d="M598 355.5 l5 2 l-5 2" stroke="#ffd600" fill="none" stroke-width="1.5"/>
+<text x="570" y="350" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Conveyor →</text><text x="570" y="350" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Conveyor →</text>
+<path d="M120 428 l-8 12 l16 0 Z" fill="#5d4037"/>
+<rect x="80" y="422" width="80" height="6" fill="#8d6e63" stroke="#000"/>
+<text x="120" y="402" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Seesaw</text><text x="120" y="402" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Seesaw</text>
+<circle cx="1130" cy="260" r="4" fill="#424242"/>
+<line x1="1130" y1="260" x2="1130" y2="400" stroke="#424242" stroke-width="3"/>
+<path d="M1046 372 A 140 140 0 0 0 1214 372" fill="none" stroke="#90a4ae" stroke-dasharray="4 4"/>
+<circle cx="1130" cy="400" r="14" fill="#455a64" stroke="#000" stroke-width="2"/>
+<text x="1130" y="252" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Wrecking ball (shoot to swing)</text><text x="1130" y="252" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Wrecking ball (shoot to swing)</text>
+<circle cx="380" cy="230" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="380" y="219" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="380" y="219" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="900" cy="230" r="7" fill="#ffc400" stroke="#1b1b1b" stroke-width="2"/>
+<text x="900" y="219" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +stamina</text><text x="900" y="219" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +stamina</text>
+<circle cx="120" cy="340" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="120" y="329" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="120" y="329" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="1160" cy="340" r="7" fill="#ffc400" stroke="#1b1b1b" stroke-width="2"/>
+<text x="1160" y="329" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +stamina</text><text x="1160" y="329" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +stamina</text>
+<circle cx="640" cy="300" r="11" fill="#ffffff" fill-opacity="0.7" stroke="#1e88e5" stroke-width="2.5"/>
+<text x="640" y="304" style="font: 700 13px system-ui, sans-serif; text-anchor: middle;" fill="#1e88e5">?</text>
+<text x="640" y="284" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Power-up bubble</text><text x="640" y="284" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#1565c0">Power-up bubble</text>
+<line x1="260" y1="440" x2="260" y2="418" stroke="#2e7d32" stroke-width="2"/>
+<path d="M260 418 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="265" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S1</text><text x="265" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S1</text>
+<line x1="1020" y1="440" x2="1020" y2="418" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1020 418 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1015" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S2</text><text x="1015" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S2</text>
+<line x1="480" y1="360" x2="480" y2="338" stroke="#2e7d32" stroke-width="2"/>
+<path d="M480 338 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="485" y="335" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S3</text><text x="485" y="335" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S3</text>
+<line x1="800" y1="360" x2="800" y2="338" stroke="#2e7d32" stroke-width="2"/>
+<path d="M800 338 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="795" y="335" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S4</text><text x="795" y="335" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S4</text>
+<line x1="380" y1="280" x2="380" y2="258" stroke="#2e7d32" stroke-width="2"/>
+<path d="M380 258 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="385" y="255" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S5</text><text x="385" y="255" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S5</text>
+<line x1="900" y1="280" x2="900" y2="258" stroke="#2e7d32" stroke-width="2"/>
+<path d="M900 258 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="895" y="255" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S6</text><text x="895" y="255" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S6</text>
+<line x1="40" y1="440" x2="40" y2="418" stroke="#2e7d32" stroke-width="2"/>
+<path d="M40 418 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="45" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S7</text><text x="45" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S7</text>
+<line x1="1240" y1="440" x2="1240" y2="418" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1240 418 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1235" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S8</text><text x="1235" y="415" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S8</text>
+<rect x="240" y="1" width="800" height="518" fill="none" stroke="#6a1b9a" stroke-width="2.5" stroke-dasharray="10 6"/>
+<text x="246" y="512" style="font: 700 12px system-ui, sans-serif; text-anchor: start;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">small size (few players): x 12-52 only</text><text x="246" y="512" style="font: 700 12px system-ui, sans-serif; text-anchor: start;" fill="#6a1b9a">small size (few players): x 12-52 only</text>
+</g>
+<text x="0" y="22" style="font: 700 17px system-ui, sans-serif; text-anchor: start;" fill="#10262e">Test Lab: FULL SIZE (5-8 players)  ·  64 x 26 m  ·  8 spawns</text>
+</svg><p class="ok">Validator: no problems</p><p class="ok">Reach (jumps 17 places): every place can be reached and left; on two stumps out of reach: perch_r, bridge_r, step_r3, step_r2, cover_r, step_r1, seesaw_l, bouncer_l, ground_1, ground_2, ground_2</p></div>
+<div class="map"><svg viewBox="0 0 1440 474" width="1440" height="474" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0 34)">
+<rect width="1440" height="440" fill="#cdeee2"/>
+<rect x="2" y="2" width="716" height="401" fill="none" stroke="#7a9c90" stroke-width="1.5" stroke-dasharray="3 5"/>
+<text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">one screen (36 x 20.25 m)</text><text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" fill="#4f6f63">one screen (36 x 20.25 m)</text>
+<rect x="660" y="0" width="120" height="420" fill="#ffffff" fill-opacity="0.45" stroke="#90a4ae" stroke-dasharray="6 4"/>
+<line x1="680" y1="258" x2="680" y2="162" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="720" y1="258" x2="720" y2="162" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="760" y1="258" x2="760" y2="162" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="720" y="16" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">UPDRAFT: wind up (7 m/s²)</text><text x="720" y="16" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">UPDRAFT: wind up (7 m/s²)</text>
+<text x="720" y="30" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">(goes on up into the sky)</text><text x="720" y="30" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">(goes on up into the sky)</text>
+<rect x="320" y="0" width="340" height="220" fill="#ffffff" fill-opacity="0.45" stroke="#90a4ae" stroke-dasharray="6 4"/>
+<line x1="538" y1="27.5" x2="442" y2="27.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="538" y1="82.5" x2="442" y2="82.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="538" y1="137.5" x2="442" y2="137.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="538" y1="192.5" x2="442" y2="192.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="490" y="16" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">GUST L: wind left (5 m/s²)</text><text x="490" y="16" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">GUST L: wind left (5 m/s²)</text>
+<text x="490" y="30" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">(goes on up into the sky)</text><text x="490" y="30" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">(goes on up into the sky)</text>
+<rect x="780" y="0" width="340" height="220" fill="#ffffff" fill-opacity="0.45" stroke="#90a4ae" stroke-dasharray="6 4"/>
+<line x1="902" y1="27.5" x2="998" y2="27.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="902" y1="82.5" x2="998" y2="82.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="902" y1="137.5" x2="998" y2="137.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="902" y1="192.5" x2="998" y2="192.5" stroke="#78909c" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="950" y="16" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">GUST R: wind right (5 m/s²)</text><text x="950" y="16" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">GUST R: wind right (5 m/s²)</text>
+<text x="950" y="30" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">(goes on up into the sky)</text><text x="950" y="30" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">(goes on up into the sky)</text>
+<rect x="660" y="300" width="120" height="120" fill="#5d4037"/>
+<path d="M661 420 L665 412 L669 420 Z" fill="#e57373"/>
+<path d="M671 420 L675 412 L679 420 Z" fill="#e57373"/>
+<path d="M681 420 L685 412 L689 420 Z" fill="#e57373"/>
+<path d="M691 420 L695 412 L699 420 Z" fill="#e57373"/>
+<path d="M701 420 L705 412 L709 420 Z" fill="#e57373"/>
+<path d="M711 420 L715 412 L719 420 Z" fill="#e57373"/>
+<path d="M721 420 L725 412 L729 420 Z" fill="#e57373"/>
+<path d="M731 420 L735 412 L739 420 Z" fill="#e57373"/>
+<path d="M741 420 L745 412 L749 420 Z" fill="#e57373"/>
+<path d="M751 420 L755 412 L759 420 Z" fill="#e57373"/>
+<path d="M761 420 L765 412 L769 420 Z" fill="#e57373"/>
+<path d="M771 420 L775 412 L779 420 Z" fill="#e57373"/>
+<text x="720" y="370" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">PIT</text>
+<text x="720" y="384" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">ring out</text>
+<rect x="260" y="340" width="60" height="80" fill="#5d4037"/>
+<path d="M261 420 L265 412 L269 420 Z" fill="#e57373"/>
+<path d="M271 420 L275 412 L279 420 Z" fill="#e57373"/>
+<path d="M281 420 L285 412 L289 420 Z" fill="#e57373"/>
+<path d="M291 420 L295 412 L299 420 Z" fill="#e57373"/>
+<path d="M301 420 L305 412 L309 420 Z" fill="#e57373"/>
+<path d="M311 420 L315 412 L319 420 Z" fill="#e57373"/>
+<text x="290" y="390" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">PIT</text>
+<text x="290" y="404" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">ring out</text>
+<rect x="1120" y="340" width="60" height="80" fill="#5d4037"/>
+<path d="M1121 420 L1125 412 L1129 420 Z" fill="#e57373"/>
+<path d="M1131 420 L1135 412 L1139 420 Z" fill="#e57373"/>
+<path d="M1141 420 L1145 412 L1149 420 Z" fill="#e57373"/>
+<path d="M1151 420 L1155 412 L1159 420 Z" fill="#e57373"/>
+<path d="M1161 420 L1165 412 L1169 420 Z" fill="#e57373"/>
+<path d="M1171 420 L1175 412 L1179 420 Z" fill="#e57373"/>
+<text x="1150" y="390" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">PIT</text>
+<text x="1150" y="404" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">ring out</text>
+<rect x="320" y="300" width="160" height="140" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="480" y="300" width="70" height="6" fill="#b3e5fc" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="480" y="306" width="70" height="134" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="550" y="300" width="110" height="140" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="780" y="300" width="110" height="140" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="890" y="300" width="70" height="6" fill="#b3e5fc" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="890" y="306" width="70" height="134" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="960" y="300" width="160" height="140" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="660" y="420" width="120" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="400" y="274" width="60" height="26" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="460" y="254" width="80" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="980" y="274" width="60" height="26" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="900" y="254" width="80" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="560" y="280" width="28" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="852" y="280" width="28" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="0" y="340" width="260" height="100" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="1180" y="340" width="260" height="100" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="210" y="320" width="50" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="1180" y="320" width="50" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="260" y="420" width="60" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="1120" y="420" width="60" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<text x="400" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Rooftop</text><text x="400" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Rooftop</text>
+<text x="515" y="320" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Skylight (ICE)</text><text x="515" y="320" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Skylight (ICE)</text>
+<text x="605" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Rooftop</text><text x="605" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Rooftop</text>
+<text x="835" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Rooftop</text><text x="835" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Rooftop</text>
+<text x="925" y="320" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Skylight (ICE)</text><text x="925" y="320" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Skylight (ICE)</text>
+<text x="1040" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Rooftop</text><text x="1040" y="374" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Rooftop</text>
+<text x="430" y="291" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Stairwell hut</text><text x="430" y="291" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Stairwell hut</text>
+<text x="500" y="276" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Water tower deck</text><text x="500" y="276" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Water tower deck</text>
+<text x="1010" y="291" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Stairwell hut</text><text x="1010" y="291" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Stairwell hut</text>
+<text x="940" y="276" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Water tower deck</text><text x="940" y="276" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Water tower deck</text>
+<text x="574" y="275" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">AC unit</text><text x="574" y="275" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">AC unit</text>
+<text x="866" y="275" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">AC unit</text><text x="866" y="275" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">AC unit</text>
+<text x="130" y="394" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Lower rooftop</text><text x="130" y="394" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Lower rooftop</text>
+<text x="1310" y="394" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Lower rooftop</text><text x="1310" y="394" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Lower rooftop</text>
+<text x="235" y="315" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">vent_l</text><text x="235" y="315" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">vent_l</text>
+<text x="1205" y="315" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">vent_r</text><text x="1205" y="315" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">vent_r</text>
+<rect x="566" y="264" width="16" height="16" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M566 264 L582 280 M582 264 L566 280" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="858" y="264" width="16" height="16" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M858 264 L874 280 M874 264 L858 280" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="110" y="320" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M110 320 L130 340 M130 320 L110 340" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="1310" y="320" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M1310 320 L1330 340 M1330 320 L1310 340" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<text x="574" y="258" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="574" y="258" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="866" y="258" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="866" y="258" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="120" y="314" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="120" y="314" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="1320" y="314" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="1320" y="314" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<path d="M720 300 l-8 12 l16 0 Z" fill="#5d4037"/>
+<rect x="670" y="294" width="100" height="6" fill="#8d6e63" stroke="#000"/>
+<text x="720" y="274" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Plank (tips like a seesaw)</text><text x="720" y="274" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Plank (tips like a seesaw)</text>
+<circle cx="720" cy="180" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="720" y="169" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="720" y="169" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="400" cy="120" r="7" fill="#ffc400" stroke="#1b1b1b" stroke-width="2"/>
+<text x="400" y="109" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +stamina</text><text x="400" y="109" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +stamina</text>
+<circle cx="1040" cy="120" r="7" fill="#ffc400" stroke="#1b1b1b" stroke-width="2"/>
+<text x="1040" y="109" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +stamina</text><text x="1040" y="109" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +stamina</text>
+<circle cx="130" cy="240" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="130" y="229" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="130" y="229" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="1310" cy="240" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="1310" y="229" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="1310" y="229" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="720" cy="110" r="11" fill="#ffffff" fill-opacity="0.7" stroke="#1e88e5" stroke-width="2.5"/>
+<text x="720" y="114" style="font: 700 13px system-ui, sans-serif; text-anchor: middle;" fill="#1e88e5">?</text>
+<text x="720" y="94" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Power-up bubble</text><text x="720" y="94" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#1565c0">Power-up bubble</text>
+<line x1="360" y1="300" x2="360" y2="278" stroke="#2e7d32" stroke-width="2"/>
+<path d="M360 278 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="365" y="275" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S1</text><text x="365" y="275" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S1</text>
+<line x1="1080" y1="300" x2="1080" y2="278" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1080 278 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1075" y="275" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S2</text><text x="1075" y="275" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S2</text>
+<line x1="430" y1="274" x2="430" y2="252" stroke="#2e7d32" stroke-width="2"/>
+<path d="M430 252 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="435" y="249" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S3</text><text x="435" y="249" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S3</text>
+<line x1="1010" y1="274" x2="1010" y2="252" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1010 252 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1005" y="249" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S4</text><text x="1005" y="249" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S4</text>
+<line x1="500" y1="254" x2="500" y2="232" stroke="#2e7d32" stroke-width="2"/>
+<path d="M500 232 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="505" y="229" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S5</text><text x="505" y="229" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S5</text>
+<line x1="940" y1="254" x2="940" y2="232" stroke="#2e7d32" stroke-width="2"/>
+<path d="M940 232 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="935" y="229" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S6</text><text x="935" y="229" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S6</text>
+<line x1="60" y1="340" x2="60" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M60 318 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="65" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S7</text><text x="65" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S7</text>
+<line x1="1380" y1="340" x2="1380" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1380 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1375" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S8</text><text x="1375" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S8</text>
+<line x1="200" y1="340" x2="200" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M200 318 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="205" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S9</text><text x="205" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S9</text>
+<line x1="1240" y1="340" x2="1240" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1240 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1235" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S10</text><text x="1235" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S10</text>
+<rect x="320" y="1" width="800" height="438" fill="none" stroke="#6a1b9a" stroke-width="2.5" stroke-dasharray="10 6"/>
+<text x="326" y="432" style="font: 700 12px system-ui, sans-serif; text-anchor: start;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">small size (few players): x 16-56 only</text><text x="326" y="432" style="font: 700 12px system-ui, sans-serif; text-anchor: start;" fill="#6a1b9a">small size (few players): x 16-56 only</text>
+</g>
+<text x="0" y="22" style="font: 700 17px system-ui, sans-serif; text-anchor: start;" fill="#10262e">Windy Rooftop: FULL SIZE (5-8 players)  ·  72 x 22 m  ·  10 spawns</text>
+</svg><p class="ok">Validator: no problems</p><p class="ok">Reach (jumps 17 places): every place can be reached and left; on two stumps out of reach: tower_r, hut_r, ac_r, skylight_r, roof_r, vent_l, vent_r, roof_far_l, roof_far_r</p></div>
+<div class="map"><svg viewBox="0 0 1280 574" width="1280" height="574" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0 34)">
+<rect width="1280" height="540" fill="#cdeee2"/>
+<rect x="2" y="2" width="716" height="401" fill="none" stroke="#7a9c90" stroke-width="1.5" stroke-dasharray="3 5"/>
+<text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">one screen (36 x 20.25 m)</text><text x="8" y="16" style="font: 11px system-ui, sans-serif; text-anchor: start;" fill="#4f6f63">one screen (36 x 20.25 m)</text>
+<rect x="560" y="460" width="160" height="60" fill="#5d4037"/>
+<path d="M561 520 L565 512 L569 520 Z" fill="#e57373"/>
+<path d="M571 520 L575 512 L579 520 Z" fill="#e57373"/>
+<path d="M581 520 L585 512 L589 520 Z" fill="#e57373"/>
+<path d="M591 520 L595 512 L599 520 Z" fill="#e57373"/>
+<path d="M601 520 L605 512 L609 520 Z" fill="#e57373"/>
+<path d="M611 520 L615 512 L619 520 Z" fill="#e57373"/>
+<path d="M621 520 L625 512 L629 520 Z" fill="#e57373"/>
+<path d="M631 520 L635 512 L639 520 Z" fill="#e57373"/>
+<path d="M641 520 L645 512 L649 520 Z" fill="#e57373"/>
+<path d="M651 520 L655 512 L659 520 Z" fill="#e57373"/>
+<path d="M661 520 L665 512 L669 520 Z" fill="#e57373"/>
+<path d="M671 520 L675 512 L679 520 Z" fill="#e57373"/>
+<path d="M681 520 L685 512 L689 520 Z" fill="#e57373"/>
+<path d="M691 520 L695 512 L699 520 Z" fill="#e57373"/>
+<path d="M701 520 L705 512 L709 520 Z" fill="#e57373"/>
+<path d="M711 520 L715 512 L719 520 Z" fill="#e57373"/>
+<text x="640" y="506" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#ffffff">PIT (fall in = ring out)</text>
+<rect x="0" y="460" width="560" height="80" fill="#f7b267" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="560" y="520" width="160" height="20" fill="#f7b267" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="720" y="460" width="560" height="80" fill="#f7b267" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="400" y="436" width="100" height="24" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="400" y="412" width="70" height="48" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="400" y="388" width="40" height="72" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="360" y="364" width="60" height="6" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="280" y="340" width="120" height="10" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="400" y="244" width="120" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="420" y="220" width="50" height="6" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="460" y="196" width="60" height="6" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="330" y="440" width="24" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="120" y="436" width="24" height="24" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="780" y="436" width="100" height="24" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="810" y="412" width="70" height="48" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="840" y="388" width="40" height="72" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="860" y="364" width="60" height="6" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="880" y="340" width="120" height="10" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="760" y="244" width="120" height="8" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="810" y="220" width="50" height="6" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="760" y="196" width="60" height="6" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="926" y="440" width="24" height="20" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="1136" y="436" width="24" height="24" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<rect x="520" y="172" width="240" height="10" fill="#f3f0ea" stroke="#6d5a4b" stroke-opacity="0.6"/>
+<text x="280" y="482" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#7a4b16">Ground</text>
+<text x="1000" y="482" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#7a4b16">Ground</text>
+<text x="450" y="452" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">pallets_l1</text><text x="450" y="452" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">pallets_l1</text>
+<text x="435" y="440" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">pallets_l2</text><text x="435" y="440" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">pallets_l2</text>
+<text x="420" y="383" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">pallets_l3</text><text x="420" y="383" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">pallets_l3</text>
+<text x="390" y="384" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">board_l1</text><text x="390" y="384" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">board_l1</text>
+<text x="340" y="364" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">deck_l</text><text x="340" y="364" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">deck_l</text>
+<text x="460" y="266" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">girder_l</text><text x="460" y="266" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">girder_l</text>
+<text x="445" y="240" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">board_l2</text><text x="445" y="240" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">board_l2</text>
+<text x="490" y="216" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">board_l3</text><text x="490" y="216" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">board_l3</text>
+<text x="342" y="435" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">block_l1</text><text x="342" y="435" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">block_l1</text>
+<text x="132" y="431" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">block_l2</text><text x="132" y="431" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">block_l2</text>
+<text x="830" y="452" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">pallets_r1</text><text x="830" y="452" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">pallets_r1</text>
+<text x="845" y="440" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">pallets_r2</text><text x="845" y="440" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">pallets_r2</text>
+<text x="860" y="383" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">pallets_r3</text><text x="860" y="383" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">pallets_r3</text>
+<text x="890" y="384" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">board_r1</text><text x="890" y="384" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">board_r1</text>
+<text x="940" y="364" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">deck_r</text><text x="940" y="364" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">deck_r</text>
+<text x="820" y="266" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">girder_r</text><text x="820" y="266" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">girder_r</text>
+<text x="835" y="240" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">board_r2</text><text x="835" y="240" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">board_r2</text>
+<text x="790" y="216" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">board_r3</text><text x="790" y="216" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">board_r3</text>
+<text x="938" y="435" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">block_r1</text><text x="938" y="435" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">block_r1</text>
+<text x="1148" y="431" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">block_r2</text><text x="1148" y="431" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">block_r2</text>
+<text x="640" y="196" style="font: 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">crane_deck</text><text x="640" y="196" style="font: 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">crane_deck</text>
+<rect x="366" y="440" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M366 440 L386 460 M386 440 L366 460" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="894" y="440" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M894 440 L914 460 M914 440 L894 460" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="50" y="440" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M50 440 L70 460 M70 440 L50 460" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<rect x="1210" y="440" width="20" height="20" fill="#c98b4b" stroke="#1b1b1b" stroke-width="2"/>
+<path d="M1210 440 L1230 460 M1230 440 L1210 460" stroke="#1b1b1b" stroke-opacity="0.5"/>
+<text x="376" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="376" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="904" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="904" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="60" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="60" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<text x="1220" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Crate</text><text x="1220" y="434" style="font: 11px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Crate</text>
+<rect x="244" y="454" width="32" height="6" fill="#ff1744" stroke="#000"/>
+<text x="260" y="448" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Trampoline</text><text x="260" y="448" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#c62828">Trampoline</text>
+<rect x="1004" y="454" width="32" height="6" fill="#ff1744" stroke="#000"/>
+<text x="1020" y="448" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Trampoline</text><text x="1020" y="448" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#c62828">Trampoline</text>
+<rect x="364" y="334" width="32" height="6" fill="#ff1744" stroke="#000"/>
+<text x="380" y="328" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Trampoline</text><text x="380" y="328" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#c62828">Trampoline</text>
+<rect x="884" y="334" width="32" height="6" fill="#ff1744" stroke="#000"/>
+<text x="900" y="328" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Trampoline</text><text x="900" y="328" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#c62828">Trampoline</text>
+<circle cx="640" cy="182" r="4" fill="#424242"/>
+<line x1="640" y1="182" x2="640" y2="302" stroke="#424242" stroke-width="3"/>
+<path d="M568 278 A 120 120 0 0 0 712 278" fill="none" stroke="#90a4ae" stroke-dasharray="4 4"/>
+<circle cx="640" cy="302" r="14" fill="#455a64" stroke="#000" stroke-width="2"/>
+<text x="640" y="174" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Wrecking ball (shoot to swing)</text><text x="640" y="174" style="font: 700 12px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Wrecking ball (shoot to swing)</text>
+<circle cx="640" cy="122" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="640" y="111" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="640" y="111" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="460" cy="154" r="7" fill="#ffc400" stroke="#1b1b1b" stroke-width="2"/>
+<text x="460" y="143" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +stamina</text><text x="460" y="143" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +stamina</text>
+<circle cx="820" cy="154" r="7" fill="#ffc400" stroke="#1b1b1b" stroke-width="2"/>
+<text x="820" y="143" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +stamina</text><text x="820" y="143" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +stamina</text>
+<circle cx="80" cy="380" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="80" y="369" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="80" y="369" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="1200" cy="380" r="7" fill="#ff3d3d" stroke="#1b1b1b" stroke-width="2"/>
+<text x="1200" y="369" style="font: 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Apple +health</text><text x="1200" y="369" style="font: 10px system-ui, sans-serif; text-anchor: middle;" fill="#10262e">Apple +health</text>
+<circle cx="640" cy="380" r="11" fill="#ffffff" fill-opacity="0.7" stroke="#1e88e5" stroke-width="2.5"/>
+<text x="640" y="384" style="font: 700 13px system-ui, sans-serif; text-anchor: middle;" fill="#1e88e5">?</text>
+<text x="640" y="364" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">Power-up bubble</text><text x="640" y="364" style="font: 700 11px system-ui, sans-serif; text-anchor: middle;" fill="#1565c0">Power-up bubble</text>
+<line x1="310" y1="460" x2="310" y2="438" stroke="#2e7d32" stroke-width="2"/>
+<path d="M310 438 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="315" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S1</text><text x="315" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S1</text>
+<line x1="970" y1="460" x2="970" y2="438" stroke="#2e7d32" stroke-width="2"/>
+<path d="M970 438 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="965" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S2</text><text x="965" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S2</text>
+<line x1="310" y1="340" x2="310" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M310 318 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="315" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S3</text><text x="315" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S3</text>
+<line x1="970" y1="340" x2="970" y2="318" stroke="#2e7d32" stroke-width="2"/>
+<path d="M970 318 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="965" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S4</text><text x="965" y="315" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S4</text>
+<line x1="486" y1="436" x2="486" y2="414" stroke="#2e7d32" stroke-width="2"/>
+<path d="M486 414 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="491" y="411" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S5</text><text x="491" y="411" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S5</text>
+<line x1="794" y1="436" x2="794" y2="414" stroke="#2e7d32" stroke-width="2"/>
+<path d="M794 414 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="789" y="411" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S6</text><text x="789" y="411" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S6</text>
+<line x1="40" y1="460" x2="40" y2="438" stroke="#2e7d32" stroke-width="2"/>
+<path d="M40 438 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="45" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S7</text><text x="45" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S7</text>
+<line x1="1240" y1="460" x2="1240" y2="438" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1240 438 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1235" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S8</text><text x="1235" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S8</text>
+<line x1="180" y1="460" x2="180" y2="438" stroke="#2e7d32" stroke-width="2"/>
+<path d="M180 438 l12 5 l-12 5 Z" fill="#43a047"/>
+<text x="185" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S9</text><text x="185" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S9</text>
+<line x1="1100" y1="460" x2="1100" y2="438" stroke="#2e7d32" stroke-width="2"/>
+<path d="M1100 438 l-12 5 l12 5 Z" fill="#43a047"/>
+<text x="1095" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">S10</text><text x="1095" y="435" style="font: 700 10px system-ui, sans-serif; text-anchor: middle;" fill="#1b5e20">S10</text>
+<rect x="240" y="1" width="800" height="538" fill="none" stroke="#6a1b9a" stroke-width="2.5" stroke-dasharray="10 6"/>
+<text x="246" y="532" style="font: 700 12px system-ui, sans-serif; text-anchor: start;" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round" fill="none">small size (few players): x 12-52 only</text><text x="246" y="532" style="font: 700 12px system-ui, sans-serif; text-anchor: start;" fill="#6a1b9a">small size (few players): x 12-52 only</text>
+</g>
+<text x="0" y="22" style="font: 700 17px system-ui, sans-serif; text-anchor: start;" fill="#10262e">Construction Site: FULL SIZE (5-8 players)  ·  64 x 27 m  ·  10 spawns</text>
+</svg><p class="ok">Validator: no problems</p><p class="ok">Reach (jumps 31 places): every place can be reached and left; on two stumps out of reach: crane_deck, board_r3, board_r2, girder_r, girder_r, deck_r, board_r1, pallets_r3, pallets_r2, block_l2, pallets_r1, block_r2, block_r1, ground_2, ground_2, ground_2, ground_2</p></div>
+<svg width="0" height="0"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#78909c"/></marker></defs></svg>
+</body></html>

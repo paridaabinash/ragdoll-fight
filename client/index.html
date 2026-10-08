@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ragdoll PvP</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111418; overflow: hidden; font-family: system-ui, sans-serif; color: #eceff1; }
+      #join { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 5; overflow-y: auto; }
+      #join[hidden] { display: none; }
+      .panel { background: #1c2128; border: 1px solid #37474f; border-radius: 10px; padding: 24px 28px; width: min(380px, calc(100vw - 32px)); box-sizing: border-box; margin: 16px 0; }
+      h1 { margin: 0 0 16px; font-size: 22px; }
+      h2 { margin: 18px 0 8px; font-size: 14px; color: #b0bec5; font-weight: 600; }
+      label { display: block; font-size: 13px; color: #b0bec5; margin-bottom: 6px; }
+      label.gap { margin-top: 12px; }
+      select { width: 100%; box-sizing: border-box; padding: 9px; font-size: 15px; border-radius: 6px; border: 1px solid #455a64; background: #0f1317; color: #eceff1; }
+      #hat-help { margin-top: 6px; }
+      input { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #455a64; background: #0f1317; color: #eceff1; }
+      button { padding: 10px 12px; font-size: 15px; font-weight: 600; border: 0; border-radius: 6px; background: #42a5f5; color: #0b1a26; cursor: pointer; }
+      button.secondary { background: #37474f; color: #eceff1; }
+      button:disabled { opacity: 0.55; cursor: default; }
+      .row { display: flex; gap: 8px; margin-top: 12px; }
+      .row button { flex: 1; }
+      #rooms { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+      #rooms li { display: flex; align-items: center; gap: 8px; background: #0f1317; border: 1px solid #263238; border-radius: 6px; padding: 8px 10px; }
+      #rooms li .who { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #rooms li .who b { font-size: 14px; }
+      #rooms li button { padding: 6px 12px; font-size: 13px; }
+      #rooms .empty { color: #78909c; font-size: 13px; background: none; border: 0; padding: 0; }
+      #share { margin-top: 16px; font-size: 13px; color: #b0bec5; }
+      #share code { color: #90caf9; font-size: 14px; user-select: all; }
+      #status { min-height: 20px; margin-top: 12px; font-size: 13px; color: #ef9a9a; }
+      .small { margin-top: 12px; font-size: 12px; color: #78909c; }
+      .small a { color: #90caf9; }
+    </style>
+  </head>
+  <body>
+    <div id="join" hidden>
+      <form class="panel" id="join-form">
+        <h1>Ragdoll Archers</h1>
+        <label for="name">Your name</label>
+        <input id="name" maxlength="16" autocomplete="nickname" />
+        <label for="hat" class="gap">Hat</label>
+        <select id="hat"></select>
+        <div id="hat-help" class="small"></div>
+        <div class="row">
+          <button id="play" type="submit">Quick play</button>
+          <button id="new-room" class="secondary" type="button">New room</button>
+        </div>
+        <h2>Rooms on this server</h2>
+        <ul id="rooms"><li class="empty">Looking for rooms...</li></ul>
+        <div id="share"></div>
+        <div id="status"></div>
+        <div class="small">Offline test range: <a href="?mode=local">?mode=local</a> · fake lag: add <code>?lag=120&amp;jitter=40</code></div>
+      </form>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

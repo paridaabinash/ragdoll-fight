@@ -1,0 +1,629 @@
+# Ragdoll Archer .io: Architecture
+
+A 2D multiplayer `.io` physics brawler inspired by *Ragdoll Archers*. Players are floppy, self-balancing ragdolls who shoot each other with point-and-click pump guns (L3; it was a drag-and-release bow until then).
+
+**Status:** Phases 1–4 done (archery, ragdoll, game rules + walking, multiplayer). Now: the **Slapstick Update** (agreed spec and build phases in [modifications.md](modifications.md)). **S1–S7 done** (arenas + camera, matches + bots, arrow effects + callouts, body + skin, power-ups + wall pins, hazards + floor types, match spice). **Next: the Look & Feel + Body Damage update (L0–L6, planned 2026-10-08, see [modifications.md](modifications.md) section 11):** the bow becomes a gun (point-and-click, fixed bullet speed with drop, pump/bolt reload, stamina per shot); flat bright stick figures on dark moody arenas; stylized gritty body damage (bullet holes, legs shot down to stumps, a hand shot off, apples repair), critical hits that leave you with a melee weapon; snappier movement with dust; smaller callouts. **L0 (limb-loss spike), L1 (look), L2 (movement feel + dust), L3 (the gun), L4 (body damage) L5 (crits + melee) and L6 (re-check + the first two final arenas) done.** The weapon is now the gun: it points at the mouse pointer, every bullet flies at 32 m/s and drops, a 0.7 s pump reload and 12 stamina per shot, bullets vanish where they hit. Hits now add up over a life: a leg ladder (trip → dragging limp → thigh stump → trip → two stumps), bullet holes, glove dents; a red apple puts you back together. Rare critical hits knock the gun away: you fight on with a bat or mace (faster, tougher) whose hits break limbs, and the 3rd melee hit shatters a body. L6 re-checked every number, added an automatic arena **reach check**, and built **Windy Rooftop** and **Construction Site** (rotation: Windy Rooftop → Construction Site → Test Lab → Backyard). **Now: the L7 feel pass (planned 2026-10-08 after playing, modifications.md section 11 "L7"; step 1 game-speed dial and 1b no gun wobble / no hand loss done; next: a global look to plan together):** a game-speed dial to try, clean visuals and a steadier camera/cursor, headshots ×2.5 + a visible 2 s spawn shield + 25% bots, rarer and clearly shown disarms, bullet hits that knock bodies, a redesigned melee swing (no pointer, timed clicks, two motions), noticeable limb loss, springy legs. Then more final arenas (section 12 of modifications.md), then Phase 5 (polish + ship). In the code a bullet is still called `Arrow` (`world.arrows`, `arrow_hit`), from the bow days.
+
+---
+
+## 1. Game Rules
+
+Numbers marked *(tunable)* are starting values. They live in `shared/src/constants.ts` once built.
+
+### Aiming and shooting (L3: the gun)
+- **The gun points at the mouse pointer**, from your shoulder; how far away the pointer is doesn't matter. With no aim input (bots walking, before the mouse moved) it points straight ahead. The arms are always up holding it, except when stamina is empty (arms down), while laughing (feather), knocked by a glove/bomb/oil slide, and when dead.
+- **Click to fire; hold the button to fire again each time the gun is reloaded.** Every bullet leaves at **32 m/s** (`GUN.bulletSpeed`, the bow's old full draw) and drops with gravity: short shots aim low, long ones are high lobs.
+- **Pump reload: 0.7 s** (`GUN.reloadTicks` 42) after each shot, shown by the pump sliding back and forward on the gun and by a small ring around the pointer.
+- A dotted **preview** shows the first **0.5 s** of flight (`GUN.previewTicks`), computed by the exact same code as the real bullet, so it is never wrong against things that don't move; you judge the drop after that.
+- **Bullets vanish where they hit** (a wall gets a bullet hole and a dust puff; a player gets the spark, chips and damage). Only a sticky bomb and a plunger whose rope caught someone stay, as objects, until they go off / let go.
+
+### Damage *(tunable, Phase 3; values confirmed)*
+- Health = 100. Base damage = 20 × (impact speed / 32 m/s): a full-power torso hit does 20 (5 to kill), a weak lob ~5.
+- Multipliers: head ×5 (full-power headshot = 100 = one-hit kill), torso ×1, arms ×0.6, legs ×0.6 **+ trip** (balance switched off for 0.8 s).
+- A bullet that hits pushes the body part, starts that part's effect, and is gone (L3; arrows used to stay stuck).
+- **Body damage (L4)** adds up over one life (`BodyDamage` in `rules.ts`, numbers in `DAMAGE` / `LIMB`):
+  - **Legs, one shared ladder** (a hit on either leg moves it; the damage goes to the first leg hit, then the other): 1st leg hit a trip; 2nd that leg **drags** (it hangs and is pulled along, the body hops on the other at 0.75× speed, slightly crouched; jumps are normal: no misfire, decided 2026-10-08); 3rd it's shot to a **thigh stump** (the shin falls off as a loose piece; hops on the good leg at full speed, jumps as high); 4th a trip on the other leg; 5th **two stumps** (0.6× speed, 0.48× jump). The crouch key does nothing on one leg or none.
+  - **Arms + torso:** no ladder (L7 removed the hand loss and its wobbling gun). An arm hit only makes the back arm windmill while walking for 5 s; the gun always fires exactly where you aim.
+  - **Marks:** a **bullet hole** where each bullet hit (stays until respawn, even through an apple); a **boxing glove** does a little damage (5 on the torso) and leaves the part **dented** (drawn bent).
+  - A **red apple** puts the body back together where it stands (legs, hand, dents; holes stay). **Respawning** resets everything.
+- **Critical hits + melee (L5)** (`melee.ts`, numbers in `MELEE`): a bullet hitting you **in the air** is a crit 25% of the time (seeded dice), a glove punch into a wall (**SPLAT** within 1.5 s) always is. A crit knocks the gun away (a loose object on the floor until you respawn; it touches no player, bullets pass through) and gives a **bat or mace** (same stats) **until death**. Melee players run ×1.25 and take ×0.7 bullet damage. The click swings (36-tick cooldown, 8 stamina): 1.8 m reach from the shoulder, ±1 rad around the aim, checked at the swing's 7th tick; 35 damage (head 45) and a push. Each melee hit breaks the arm/leg it hits (a broken back arm hangs, a broken leg drags; the player takes ×1.25 damage); the **3rd melee hit on a player shatters the body** (every joint cut, a death credited to the hitter, the pieces stay until respawn). An apple mends limbs and resets the count; the weapon stays.
+- **Kill credit:** whoever last hit the player within 3 s, including when the death comes from a fall or trip after the hit.
+
+### Stamina *(tunable, Phase 3; L3 values)*
+- Max 100. **Each shot costs 12** (`GUN.staminaPerShot`): holding fire gives 9 shots (5.6 s), then the arms drop. A jump costs 20 (~5 jumps). **Aiming and walking are free.**
+- Refills at 30/s after 0.5 s without spending; a shot counts as spending until its reload is done, so holding fire never refills (otherwise every 0.7 s reload refilled ~6 and "about 8 shots" became ~16).
+- At 0 the arms drop and you can't shoot **until stamina is back to 40** (2.5 s after the last shot), so it doesn't flicker on and off.
+
+### Apples *(Phase 3; values confirmed)*
+- 2 spots floating mid-air between the players, gently bobbing (they don't fall). A bullet that touches one is used up, and the buff goes to the shooter.
+- Red apple: +30 health. Golden apple: +50 stamina. Each respawns 10 s after being taken.
+
+### Walking *(Phase 3; decided: yes, values confirmed)*
+- Keys: A / D or Left / Right (Up/W and Down/S stay jump and crouch).
+- Speed 3 m/s (the 32 m arena in ~10 s). 50% while drawing the bow, 40% while crouching, 30% steering in the air. *(L2: 5.5 m/s, no slowdown while aiming, 65% air control; see L2.)*
+- Looks like walking, not sliding: a sideways force moves the torso and the leg motors swing the legs in a stepping rhythm matched to the speed. When stopped, both legs return to the same standing targets (keeps the Phase 2 "legs fighting through the ground" fix).
+
+### Match loop *(S2; values are starting points)*
+- Up to 8 people per room. Free-for-all **matches**: first to 15 kills or 3 minutes, then 10 s of results (everyone frozen, no damage), then the next arena in a fixed rotation (`ROTATION`). Score: 1 point per kill, 2 for killing the crown holder (S7); first to 15 points.
+- Quiet rooms are filled with server **bots** up to 4 players; each person who joins replaces one.
+- At 0 health the ragdoll goes fully limp, then respawns after 3 s at a spawn point with full health and stamina, plus 1 s of protection from damage. Kills feed a live leaderboard.
+
+### Controls
+| Action | Desktop | Mobile |
+|---|---|---|
+| Aim | point the mouse (L3) | aim stick, direction only (Phase 5) |
+| Shoot | click; hold = fire on every reload | fire button (Phase 5) |
+| Walk | A / D or Left / Right | left/right buttons (left side) |
+| Crouch | Down / S | hold the crouch button (left side) |
+| Jump | Up / W / Space | tap the jump button (left side) |
+| Taunt | T (hold) | (Phase 5) |
+
+---
+
+## 2. Tech Stack
+
+| Part | Choice | Why |
+|---|---|---|
+| Language | TypeScript | One language for client, server and tests; catches typos before running. |
+| Physics | **Rapier2D** (`@dimforge/rapier2d-compat` 0.21) | Has real hinge joints with angle limits and motors (Matter.js has neither), is fast, and runs unchanged in Node for the server. |
+| Rendering + input | **Phaser 4** | Draws the game and reads mouse/touch/keys. Phaser does **no** physics here. |
+| Multiplayer | Node.js + `ws` (WebSockets) | Server runs the same `shared/` game code and is the boss of all game state. Own binary snapshots, so no state-sync framework needed (see section 5). |
+| Dev server / bundler | Vite | Fast reload. Also relays browser logs into `logs/`. |
+| Tests | Vitest | `npm test` |
+| Run TS scripts | tsx | `npm run sim` |
+
+**Why not Matter.js:** its joints are only distance springs. No angle limits (knees bend backwards), no motors (crouch and jump would mean hand-written controllers), and fast objects can pass through thin ones. Every one of those would need custom code; Rapier has them built in.
+
+---
+
+## 3. Code Layout
+
+```
+shared/   All game logic and physics. NO Phaser, NO browser APIs. Runs in the browser, tests, sim and server.
+  src/constants.ts   every tunable number
+  src/world.ts       GameWorld: physics world, bullets ("arrows"), the one fire() that allows/refuses shots, hit tests, anomaly checks, snapshots
+  src/projectile.ts  one tick of bullet flight (used by real bullets AND the preview)
+  src/aim.ts         L3: pointer -> aim angle -> launch velocity (one bullet speed), the lob/flat-shot solver
+  src/ragdoll.ts     Ragdoll: body parts, joints, motors, balance, walk/crouch/jump/trip, aim arm
+  src/rules.ts       PlayerStats (health, stamina, score), damage and kill-credit rules, BodyDamage (L4/L5)
+  src/melee.ts       L5: critical hits, the knocked-away gun, melee swings, limb breaking, shattering
+  src/arena.ts       arena data format, full/narrow sizes, the arena validator, groundWithPits helper
+  src/arenas/        one data file per arena (backyard.ts, test-lab.ts) + the ARENAS list
+  src/level.ts       builds an arena into a world (buildArena) and the offline test range (buildTestLevel)
+  src/shapes.ts      shape outlines + plain-math ray tests (online preview)
+  src/net/           messages, binary snapshots, smoothing buffer
+  src/log.ts         Logger (writes JSON lines to any "sink")
+  test/              Vitest tests
+client/   Phaser: join screen, online scene (NetScene), offline scene (GameScene, ?mode=local&arena=test_lab&size=narrow),
+          follow camera (camera.ts), screen-fixed HUD scene (hud.ts), drawing + input helpers.
+server/   WebSocket server: rooms (GameRoom) that run the same GameWorld.
+tools/    sim.ts (headless mechanics check), netsim.ts (real server + bot players), fight.ts (seeded bot fights for sim + tests), log-files.ts
+logs/     *.jsonl log files (see section 7)
+```
+
+**Rule:** if it changes what happens in the game, it goes in `shared/`. The client only draws and collects input.
+
+### Units
+Meters, seconds, radians. **y points down** (same as the screen), so `pixels = meters × 40`. The screen shows 32 × 18 m (1280 × 720 px) at zoom 1; arenas can be bigger (the camera follows you). Arena sizes come from the arena data files, never from a constant.
+
+---
+
+## 4. Physics Model
+
+### Fixed time step
+Physics always advances in fixed steps of 1/60 s, on the client and the server. The client keeps a time "bank": each frame it adds the **real** elapsed time and runs as many 1/60 s steps as the bank allows (max 5 per frame; extra is dropped and logged as `frame_behind`). Phaser's own frame delta is smoothed and capped, so it is not used.
+
+### Bullets are NOT physics bodies
+A bullet (an `Arrow` in the code) is just a position and a speed. Each tick:
+1. `stepArrow`: gravity changes the speed, the speed moves the position.
+2. **Ray test** from the old position to the new one. The first thing the ray touches is the hit, at the exact point. Because the whole path is checked, a fast bullet can never skip through a thin wall or limb.
+3. On hit (`GameWorld.resolveHit` → `strike`): the bullet gives the body a push (`bullet mass × speed` at the hit point), hurts a player (effects, trip, wall pin), sends an `impact` event for walls/crates (bullet hole + dust on screens), and **is gone** (L3). Only a sticky bomb, and a plunger whose rope caught someone, stay stuck on what they hit (in its own frame, so they ride along) until they go off / let go. A projectile still stuck after that is logged (`projectile_after_hit`, error) and removed.
+4. Rotation = direction of travel. The shooter's own body is skipped by the ray.
+5. **Every shot starts at the shoulder** (`traceShot`): first a ray from the gun shoulder to the gun hand (one arm's length), then normal flight from the hand. Whatever is in that gap takes the bullet at once: the wall you lean on, or an enemy right in your face. Without it, a player against a wall shot through it, because the hand was already past the wall.
+
+The **aim preview** runs this exact loop without changing anything, so preview = reality for anything that doesn't move. This is tested (`predErr` must be 0).
+
+Rapier detail: its ray tests don't see newly added bodies until a physics step runs. `GameWorld` handles this with zero-length steps (nothing moves): **two** of them, since L3 found that after a collider changes size (Big Head Mode's heads) one zero step left every ray test seeing nothing at all until the next real step.
+
+### Ragdoll
+**Body:** head (circle), torso, 2 × upper/lower arm, 2 × upper/lower leg (boxes). 10 parts, 2.2 m tall, ~8 kg. Sizes in `RAGDOLL`.
+
+**Joints: two Rapier joints per hinge** (neck, shoulders, elbows, hips, knees):
+- A **multibody joint** keeps the bones exactly together. With Rapier's normal ("impulse") joints alone, the joints act like stiff springs: a landing squeezes them and the whole body bounced back up almost as high as it fell. Multibody joints treat the body as one connected tree, so that can't happen.
+- An **impulse joint** on the same spot carries the **angle limits** (knees only bend one way) and the **motor**. Rapier's JS API can only change limits and motors at runtime on impulse joints, and we need that for turning around.
+- Parts of the same ragdoll never collide with each other (one collision-group bit per player, so up to 15 per room).
+
+**Important Rapier rule:** bodies in a multibody ignore direct impulses (`applyImpulse`, `applyTorqueImpulse`, `setLinvel`). Every push goes through `GameWorld.push()` / `twist()`, which apply it as a force for exactly one tick.
+
+**Motors (holding a pose):** position motors drive each joint to a target angle (`POSES.stand`, `POSES.crouch`).
+- **Both legs always get the same targets.** With both feet on the ground, legs + ground form a closed loop. Different targets per leg made the motors fight through the ground: the body slid 1 m in 30 s, the legs crossed, and joints were pushed past their limits.
+- **Shoulders** turn all the way round, but a position motor's target wraps at ±180° and would swing the long way. So shoulders use a **velocity motor**: we compute the short-way angle error ourselves and ask for a matching spin speed.
+- Stiffness/damping in `MOTOR`. Damping ≈ 2 × √stiffness settles without wobble. Weaker leg motors could not lift the body out of a crouch.
+
+**Balance:** two parts, both scaled by `balance` (0..1):
+1. Upright torque on the torso: `kp × tilt + kd × spin speed`, capped.
+2. **Stretch:** head pulled up and feet pulled down by equal forces. Upright, this just straightens the body; tilted, it turns it back up. Equal and opposite, so the body never floats or gets floaty jumps.
+
+**Moves:**
+- **Crouch:** switch to crouch targets and lean forward. The head drops ~0.6 m.
+- **Jump:** only from the ground (rays under both feet), every part gets +7.5 m/s upward (~1 m rise). A press in the air is refused and logged.
+- **Aim (L3):** both arms always hold the gun up along the aim (the pointer, or straight ahead with no aim input): the gun arm straight, the back hand on the pump (`GUN.pumpElbow`). They hang only with `BodyMods.armsDown` (no stamina, laughing), while stunned (glove, bomb, oil slide) and when dead. **Aiming into something within arm's reach** (`aimBlocked`, logged as `aim_blocked` / `aim_clear`) lowers the gun arm instead of pressing it into the wall; pressing made the wall bend the elbows past their limits. The shot still works and hits what's in the way. Aiming past straight up or down **turns the body around**. The joint limits flip sides, and each limit temporarily widens to include the current angle so nothing snaps; it tightens again once the motor brings the joint inside.
+- **Bullets launch** from where the gun hand is when the arm points along the aim (shoulder + 0.8 m along the aim). That's a steady point even while the arm is still swinging, so the preview doesn't jitter.
+
+**Trip (leg hit):** balance off for 0.8 s, then ramps back over 16 ticks (0.27 s; was 0.6 s before the S4 body, see S4), with the leg motors at 5%. The feet are swept along the arrow's direction and the head pushed the opposite way. Those two pushes turn the body over without moving it overall, so every leg hit really knocks it down (6/6 different leg shots fell and got back up).
+
+**Solver passes:** 4 + 5 (`SOLVER_ITERATIONS` + `SOLVER_INTERNAL_ITERATIONS`). 4 + 1 let a standing ragdoll creep 0.12 m in 30 s. The **internal** passes (the multibody's own solver) are what make the **joint limits** hold: with 4 + 2, seeded bot fights left knees and elbows 0.3–1 rad past their limits, sometimes for seconds, even on a dead body lying under plain gravity. More outer passes barely helped (8 + 2: still 16 warnings out of 24); 4 + 5 gives 0, worst brief overshoot 0.16 rad. Cost ≈ 0.17 ms per ragdoll per step (4 + 2 was 0.15).
+
+**Shoulder torque cap:** shoulder motors may use at most 40 N·m (`MOTOR.shoulderMaxTorque`; holding the arm out needs ~6, a fast swing ~30). A velocity motor without a cap is effectively unlimited: arms hanging against a 1 m step and then swinging up to aim levered the elbows up to 1.1 rad past straight and shoved the body back at 5 m/s. `Ragdoll.limitOver()` / `worstLimitOver()` read how far a joint is past its limit (same number as the warning).
+
+**Root anchor (L6):** the root of the multibody tree is not the torso but an invisible `Ragdoll.anchor` at the torso's middle (a massless sensor in collision group 0, 0.05 kg, rotational inertia 1000), hinged freely to the torso. Reason: whenever a multibody joint is removed (a hand or shin shot off, a shatter), Rapier rebuilds the tree and **resets the root's rotation and speed** (joint angles are kept). With the torso as the root, a body lying down was snapped upright in one tick (1.7 rad, 18 rad/s, joints pulled 0.5-0.9 m apart) and a flying body stopped dead. The anchor's rotation is always 0, so the reset changes nothing (`lockRotations()` is ignored on a multibody root, hence the inertia), and `cutJoints()` gives the lost speed back with a push. Re-creating links isn't a way out: a new multibody link starts at joint angle 0.
+
+**Pushes on parts are 75% in the air:** Rapier applies a force on a multibody link in all but the first of its `SOLVER_ITERATIONS` sub-steps, so a push in the air changes the speed by (n−1)/n of what was asked (measured 2/4/5/8 passes: 50/75/80/87.5%). Grounded jumps don't show it (1.33 m rise for 7.5 m/s). All tuning was done with this in place; only `cutJoints()` corrects for it (it must restore an exact speed).
+
+**Legs tuck while down (L6):** while `down` (torso past `FALL.downAngle` until back under `FALL.upAngle`) the legs take the crouch targets. A straight body lying across a gap narrower than itself (the narrow Test Lab's 2 m pocket) became a strut: the unlimited hip motors pressed head and feet into the two walls with ~1500 N and friction held it there (17/36 trips never got up). Tucked, it's short enough to rise (36/36, ~1.1 s); normal get-ups are unchanged.
+
+**Soft CCD (L6, `RAGDOLL.softCcd` 0.3 m):** Rapier looks ahead for contacts of fast parts. Without it, a body thrown up at 26-28 m/s (a trampoline launch plus a jump: ~0.46 m per step) sank its head and forearm into the 0.4 m perch's underside and hung there, wedged, for good (bots seed 36). Plain CCD (`setCcdEnabled`) does nothing for multibody links. It also softens hard crushes: sim `crush` (arm raised into a ledge at 20/28 m/s) went from 1.03 rad past the limit and 17 ticks of part centres inside the perch to 0.38 rad and 0. Only far beyond game speeds (35 m/s) can it fling a forearm faster (63 m/s vs 47).
+
+**No wall-cling in the air (L6):** in the air, the walk push is held back while the torso presses against something fixed in the walk direction (contact normal from the torso into it). Pushing into a wall moves nothing; it only pressed the body harder against it, and with friction 1.2 that held the whole body up (a bot hung on a pit's side wall for good). Only the torso counts: a jump up a step brushes its face with the shins, and that push carries the body over the edge (blocking it for every part cut the running climb from 2.0 to 1.7 m). The feet were already slippery in the air for the same reason.
+
+**Crush spikes (L6):** a limb slammed into something (a forearm launched into a ledge at 25 m/s, crushed by the wrecking ball or against a wall) can be forced past its limit for a moment (up to ~1 rad). It can't be made stiffer from JS: limits live on the impulse joint, whose correction speed is capped (~3 rad/s back; that's the straight-line recovery in the logs), revolute limits can't be put on multibody joints (rapier.js only passes them for prismatic ones), and more solver passes barely help (8+10: same worst; 12+12 cuts it at 6.5× the cost). A hooked arm carrying the hanging body stays within 0.06 rad, so it's the impact, not the motors. Such a moment is followed as a spike: `joint_spike` (info) if it's back inside within `LIMIT_CHECK.spikeTicks` and the limb touched something or another part of the body changed speed by `impactSpeed` in that step or the one before (a hit, a crash). The limb's own parts aren't counted, because a limit catching its limb jolts them 6-8 m/s by itself. Anything that lasts, or that the body does to itself, still warns.
+
+---
+
+## 5. Multiplayer
+
+- **The server is the boss.** Each room runs a `GameWorld` at a fixed 60 steps/s and decides every hit, every point of damage, every death. Rooms hold up to 8 people; "Play" puts you in the fullest room that has space. Filler bots keep quiet rooms at 4 players. Rooms close when the last person leaves.
+- **Plain WebSockets (`ws`), not Colyseus.** WebSocket = a two-way connection that stays open between browser and server. Colyseus's main feature (automatic state sync) would go unused because we send our own compact snapshots, and its API changes often. Its matchmaking across many server processes can be added later if needed.
+- **Snapshots (server → client), binary, 20 per second:** every player's 10 body-part poses (positions as 16-bit whole numbers of 4 mm, range ±131 m, angles as 16-bit fractions of a half turn; a shot-off part's pose is where the loose piece lies), health, stamina, ticks until the gun is reloaded (L3), body damage (L4: lost-part bits, dent bits, leg stage; L5: weapon and broken-limb bits), flags, kills/deaths; props (puddles, balloons, ropes, L5: knocked-away guns); crates and apples; bullets in flight (and a stuck bomb/plunger). About 400 bytes with 4 players (~8.5 KB/s per player, measured). `shared/src/net/snapshot.ts`.
+- **Other messages are JSON:** `welcome` (your id, the room, the static level shapes, the crate/apple list), `roster` (names), `events` (damage/death/respawn/apple/impact, with their tick), `shot` (reply to your fire: bullet id or why refused), `pong`.
+- **Inputs (client → server, L3, protocol 11):** `input { seq, aim: angle | null, crouch, jump, move }` sent when something changes (aim changes at most ~30/s), and `fire { seq, angle, swing? }` as its own message (no power, no draw time). Every message is checked (`parseClientMessage`); bad ones are dropped and logged; more than 120 per second are dropped. Anything else in a fire message (a claimed special round, an old client's power) is not copied.
+- **The server decides if the gun can fire, by its own tick** (`GameWorld.fire`, the one place shots are allowed): before the reload is done → `fire_too_soon`; arms down, dead, laughing, match over → refused with that reason. A shot that arrives at most `GUN.earlyGraceTicks` (6) before the reload is done is **held and fired on the reload tick** (`fire_queued`): two clicks sent 0.7 s apart can arrive closer than that through network jitter, and refusing them would punish lag. The browser waits for its own reload before sending, so normally nothing is refused.
+- **Arm-hit swing online:** removed in L7 (the gun never wobbles): a shot is just an angle; the room relays it to `GameWorld.fire`. (Was: the fire message named the swing tick the client's preview showed, accepted inside a window.)
+- **Smooth display:** the client shows the world 100 ms behind the newest snapshot and blends between the two around that moment (`SnapshotBuffer`). Angles blend the short way round; a respawn jump isn't blended. Events are shown when the delayed picture reaches their tick, so damage numbers appear as the arrow lands.
+- **Instant local feel (cosmetic):** your own body is drawn from the newest snapshot (no extra delay); your gun arm points at the aim right away; the aim preview and a stand-in bullet use the same flight code (`traceShot`) against plain-math shapes of the scene (`raycastShapes`, tested to agree with Rapier). The stand-in waits for your own reload too, and hands over to the server's bullet when it appears (`placeholder_handover`, gap in meters logged); a short shot can hit and vanish between two snapshots, so once the stand-in has landed and the server said the shot went out it's done (`placeholder_landed`). Your own gun's pump and the reload ring follow your own reload clock; other players' guns follow the `reload` ticks in snapshots. Ragdoll physics is **not** predicted on the client.
+- **Players pass through each other** (`RAGDOLL.playersCollide = false`). Bullets still hit them (ray tests). With collisions on, walking players bounced off each other at ~5 m/s and bent elbows past their limits.
+- **Fake bad connection** for testing: `?lag=120&jitter=40` in the browser URL (ms round trip; message order kept, like a real connection). The netsim bots use the same idea.
+- **No rollback.** Rewinding and replaying the world isn't needed for this design and is hard with ragdolls.
+
+### Server tick cost (measured 2026-10-08, i5-1335U laptop)
+- **The live server's ticks look ~4x slower than the sim's, and that's the laptop, not the code.** The same room (3 bots + 1 person, test_lab) costs ~0.7 ms a tick back-to-back (`npm run sim -- bots`, `tick-probe hot`) but ~3.3 ms when ticked once every 1/60 s (`tick-probe timer`, and `room_stats` in the live server). Every part slows down evenly (world step ~4.6x, bot brains ~11x), process priority doesn't help, and pinning even the back-to-back loop to the slow E-cores gives the same ~3.6 ms. Cause: a thread that's idle 80% of the time gets a slow core and a low clock (Windows power saving). Not fought in code: 3.3 ms is 20% of the 16.7 ms budget, and a real server CPU behaves differently.
+- **So the two numbers measure different things:** sim `bots` = what the code costs (checked: average < 4 ms); `room_stats` = what a real paced tick costs on this machine. `tools/tick-probe.ts` shows both side by side.
+- **Log writes were the real problem.** Writing each log line synchronously on this disk sometimes stalls 30-50 ms (3.5% of paced writes took > 5 ms). Inside a tick that froze the room: tick p99 19 ms, worst 82 ms, `server_behind`. The server (and netsim, which runs the real server) now queue log lines and write them in the background every 200 ms (`fileSink(name, { background: true })`); the rest is written on exit. After: p99 7 ms, worst 15 ms. The sim keeps simple synchronous writes.
+- **`slow_step` = 10 ms**: paced world steps here are p99 ~6 ms, p99.9 ~8.5 ms; the old 4 ms fired dozens of times a minute in normal play.
+
+### Playing on the same network (LAN)
+- `npm run dev` prints the address other devices open, e.g. `http://10.11.50.14:5173` (the server finds this computer's network addresses).
+- **One address, one port.** The page's dev server (Vite, port 5173, open to the network) passes `/ws` (the game) and `/rooms` (the room list) on to the game server. The game server itself only listens on this computer (`127.0.0.1:2567`). So friends need one address, and the firewall needs one port. The real player address reaches the server logs through the forwarding header (X-Forwarded-For, trusted only from this computer).
+- **Finding a room:** the join screen lists open rooms with who's in them (refreshed every 2 s), with **Join** per room, **New room**, and **Quick play** (fullest room with space). It also shows the address to share. In the game, the HUD shows "waiting for a friend: they open <address> and join Room N" until a second person arrives.
+- Join message: `{ t: 'join', v: 2, name, room? }` where room is an id from the list (`r1`...), `'new'`, or left out for quick play. Refusals: `room_not_found`, `room_full`; a malformed room id is refused as a bad join.
+- **Firewall / network:** Windows Firewall must allow inbound TCP 5173 for Node.js on the network's profile. Some networks (company/domain networks, guest Wi-Fi) block devices from reaching each other; then it only works on a home network or hotspot.
+
+---
+
+## 6. Phases
+
+### Phase 1: Shared simulation + archery ✅
+- Workspace (`shared`, `client`, `tools`), Rapier world, fixed step.
+- Test range: ground, walls, player box, 0.1 m thin wall, platform, 3 crates, dummy.
+- Drag-release aiming, arrow flight, ray hit tests, sticking, push on hit, preview arc.
+- Logging + anomaly checks + `npm run sim` + tests.
+
+### Phase 2: Ragdoll ✅
+- Ragdoll with rigid bones, limited hinges, pose motors, balance, crouch, jump, aiming arms, turning around.
+- Arrow hits know the body part (`zone`: head/torso/arm/leg), push it, stick to it. Leg hit = trip.
+- Second ragdoll (`p2`) as a target dummy. Player box from Phase 1 removed.
+- Sim scenarios: `stand`, `crouch`, `jump`, `aim`, `trip`, `headshot`, `drop`. Tests: `shared/test/phase2.test.ts`.
+- Walking was left for Phase 3 (now decided: yes).
+
+### Phase 3: Game rules + walking ✅
+Decisions: walking added; starting numbers kept (section 1); kill credit = last hitter within 3 s.
+
+Built:
+- **Walking** (`Ragdoll.driveWalk`): every part gets the same speed change (the body moves as one piece), legs step in a rhythm matched to speed, feet go slippery while walking, and a controlled brake on release. 3 m/s; 1.5 while drawing; 1.2 crouching; 30% steering in the air. Turns to face the walk direction when not aiming.
+- **Rules** (`shared/src/rules.ts`): `PlayerStats` (health, stamina, arms down, last hitter, death/respawn timers, kills/deaths), `damageFor()`, `killCredit()`.
+- **The world applies the rules every tick:** stamina drain/refill, and each player's controls filtered before the ragdoll sees them (dead → nothing; arms down → no aim).
+- **Damage** from `arrow_hit.zone` × impact speed, in whole points. (Phase 4 changed this: full damage from 90% of top speed, see Phase 4 lessons.)
+- **Death:** body goes limp. **Respawn:** after 3 s the old ragdoll is removed (with its stuck arrows) and a new one built at the spawn point farthest from other players, 5 cm above the ground, with 1 s of protection.
+- **Kill credit** covers deaths with no arrow, which is falling out of the arena. Arrows are the only damage source, so an arrow kill always credits the shooter.
+- **Apples:** kinematic sensors (arrows hit them, bodies pass through), bobbing; the arrow is used up; buff to the shooter, capped at max; back after 10 s.
+- **Input checks:** NaN or out-of-range aims and bad `move` values are refused at `setControls` / `fire` / `previewShot` (needed for Phase 4 network input).
+- **Screen:** health and stamina bars over each head (stamina turns red while arms are down; health turns light blue while protected), floating damage numbers (HEADSHOT in yellow), apple pickups, kill feed (top right), score line. The debug toggle moved from D to **F2** (D is walk right).
+- **Event queue:** `GameWorld.takeEvents()` returns damage/death/respawn/apple events for the screen. Phase 4 can send the same events to clients.
+- Sim scenarios: `walk`, `walk_aim`, `walk_jump`, `damage`, `kill_credit`, `stamina`, `apple`, `respawn`. Tests: `shared/test/phase3.test.ts`.
+
+Lessons (kept as comments in the code):
+- **Rapier averages the friction of the two touching surfaces by default.** "Slippery" feet at 0.2 on 0.5 ground were really 0.35, which tipped the walker forward 0.55 rad and made it sink 0.6 m. The feet use the "Min" rule while walking.
+- Arrows must never be processed after being removed: a broken (NaN) arrow came back to life and "hit" every tick.
+
+### Phase 4: Multiplayer ✅
+Decisions (the suggested defaults): local only for now; dummy only while alone; quick-join with a name; endless free-for-all.
+Changed from the original plan, with reasons in section 5: `ws` instead of Colyseus; power capped by draw time instead of computed from it; players don't collide.
+
+Built:
+- `server/`: `GameRoom` (fixed 60 Hz loop, input checks, power cap, dummy rule, snapshots, events, per-player network stats), `createGameServer` (quick-join rooms, join timeout, protocol version check, 1 KB message limit, slow-client protection).
+- `shared/src/net/`: message types + checks, binary snapshots, smoothing buffer. `shared/src/shapes.ts`: outlines and plain-math ray tests.
+- `GameWorld`: `spawnPlayer` / `removePlayer`, reusable slots, spawn points that must be clear (8 of them), `movableBodies` / `staticShapes` for the network, `traceArrow` shared by the preview.
+- Client: join screen, `NetScene` (online), `GameScene` (offline, `?mode=local`), shared `draw.ts` / `input.ts`, `NetClient` (lag simulation, ping, network stats).
+- `npm run netsim`: real server + bot players over real sockets. Scenarios `basic` (4 bots fight: same events on every bot, 20 snapshots/s, bandwidth), `dummy`, `lag` (120±40 ms; smoothing judged on a perfect clock, see S3), `cheat` (instant power, garbage, flood, old protocol), `full` (9th player gets a new room).
+- Sim scenario `brawl`: two players doing bot-style fighting for 2 minutes, deterministic, no warnings allowed. Tests: `shared/test/phase4.test.ts`.
+
+Lessons:
+- Two players spawning in the same spot burst apart and bent joints: spawns now need to be clear.
+- **Full damage starts at 90% of top speed** (`HEALTH.fullDamageSpeedShare`). Online, a full-power headshot arrived at 31.83 m/s and did 99; Phase 3's rounding only worked when the arrow arrived at 31.85 m/s or faster.
+
+Added after Phase 4 (same-network play): room list + join by room, one port for everything, the share address on the join screen and in the HUD, client logs from all browsers in one file. See "Playing on the same network" in section 5. Netsim scenario `rooms`.
+
+Solved after Phase 4: the rare elbow over-bend. With controls, facing, speed and `aimBlocked` added to `joint_over_limit`, the log showed every case was a bot leaning on the thin wall and aiming into it. Fixed by lowering the bow arm when the aim is blocked (see Ragdoll / Aim), and it exposed a real exploit (shooting through walls), fixed by starting every shot at the shoulder. Sim scenario `wall_hug` replays it; tests in `phase4.test.ts`.
+
+Solved in S1/S2 (2026-10-07): the remaining `joint_over_limit` warnings (~1 netsim run in 3: a knee bent backwards while getting up after a trip, elbows ~0.6 rad past straight while drawing). Replaying seeded bot fights (`tools/fight.ts`) showed two causes: (1) the joint limits themselves didn't hold well enough (too few internal solver passes; even a dead body's knee sat 0.47 rad back for 2+ s), and (2) the shoulder motor had no torque limit, so arms caught on a step while swinging up to aim bent the elbows. Fixed by 4 + 5 solver passes and a 40 N·m shoulder cap (see Ragdoll / Solver passes). Sim: `limits` (6 seeded 4-player fights in both arenas: 19 warnings / worst 1.05 rad before, 0 / 0.22 after) and `arm_snag` (0.33 rad before, 0.03 after). Tests: `shared/test/joint-limits.test.ts` (fail on the old settings). Not changed: `LIMIT_CHECK`.
+Seen while fixing (separate issue): after stopping from walking while drawing, the body sways back up to ~0.5 m/s and settles after ~2 s (same with the old settings). The `walking` test in `phase3.test.ts` now checks it after 150 ticks instead of 90.
+
+Open:
+- Online hosting (a real server on the internet) is not set up yet; same-network play works.
+
+### Slapstick Update (S1–S7)
+Full spec and build phases (each built and tested together): [modifications.md](modifications.md). After S7 only the final arenas and character looks remain, both as plug-in content (arena data files checked by a validator; body numbers + a swappable client skin). Still to come: endless free-for-all becomes 3-minute matches with a fixed arena rotation, and the server adds filler bots (S2).
+
+#### S1: Arena framework + camera ✅
+Built:
+- **Arenas are data** (`shared/src/arenas/`): solids, crates, pits, spawns, apples, pickup spots, as plain rectangles (top-left + size, meters). `buildArena(world, layout)` adds side walls and builds the rest; the world keeps `arena` and `bounds` (arrow limits, out-of-arena). The fixed `ARENA` constant is gone; worlds built without an arena use `DEFAULT_BOUNDS` (32 × 18).
+- **Two sizes per arena:** `narrow` keeps only the middle x range, cuts solids at its edge and shifts everything to start at x 0. `arenaSizeFor(def, players)`: narrow below 5 players. For now a room keeps one arena at full size for its whole life; S2 rebuilds the world each match with the size for the player count.
+- **Arena validator** (`validateArena`): spawns stand on a solid with room to stand, aren't in a pit or too close together; enough spawns (8 full, 4 narrow); crates/pits/apples/pickups inside the arena; every pit has a floor under it. Run by a test on **every** arena file at every size, and by `buildArena` (problems logged as `arena_invalid` errors).
+- **Pits:** a kill zone in a gap of the ground, with a solid floor under it so the body lies at the bottom. Body center inside = death, cause `pit`, credit to the last hitter within 3 s (`ring_out` log, `RING OUT!` on screen). Leaving a walled arena any other way is flagged (`left_arena`).
+- **Placeholder arenas:** Backyard (the old test range, same coordinates) and Test Lab (64 × 26 m, narrow 40 m: 1 m steps up to a bridge over a pit, high perches, outer yards with crates and cover). Server default: Test Lab (`ARENA=backyard ARENA_SIZE=narrow npm run dev:server` to change). Tests/netsim default to Backyard.
+- **Spawns** pick the clear point farthest from living players by straight-line distance (arenas have heights now).
+- **Snapshots:** positions in 4 mm steps (2 mm only reached ±65 m). Protocol version 3; `welcome` carries the arena info (id, size, width, height, pits).
+- **Camera (client only):** follows your body; while drawing it zooms out to 0.8 and slides up to 5 m toward the aim; never shows outside the arena; snaps to you on respawn. Off-screen enemies get a marker at the screen edge. HUD text, kill feed, drag line and markers live in their own scene (`hud.ts`), so they don't scroll or zoom. *(L3: a fixed ~36 m view that leans toward the pointer instead, and a reload ring at the pointer instead of the drag line; see L3.)*
+
+Tests: `shared/test/s1-arena.test.ts`. Sim: `arena_spawns` (every arena/size filled, 5 s standing: 0 m drift), `pit` (shot + shove into the pit → ring-out credited, body rests on the pit floor), `step_climb` (the Test Lab steps: top in ~4 s, 6 jumps). Netsim: `arena` (6 bots in each rotation arena since L6, same arena for all, positions arrive intact).
+
+Measured: with 1 m steps a player climbs 4 m in 4 s using 6 jumps (stamina 100 → 20). Perches 8 m up are spawn-only until trampolines (S6).
+
+#### S2: Matches + bots ✅
+Built:
+- **`Match`** (`shared/src/match.ts`): one `GameWorld` per match. Ends at the kill target or the time limit (`MATCH`) → results: `world.frozen` (no controls, no shots, no damage) → next arena in the rotation, size picked from the player count at that moment. The new world starts at the old world's tick (clients' smoothing and event timing never go backwards), and everyone keeps their collision slot (clients know players by slot). A room's first arena is sized for a filled room (4 → the narrow size).
+- **Filler bots** (`shared/src/bot.ts`): `botsWanted(humans)` fills rooms up to `BOT.fillTo` (4); they leave as people join. The **bot brain** produces the same messages a browser sends, and the room runs them through the same check and power cap, so a bot can't do anything a person can't. It walks, picks the nearest enemy, searches arcs from the flat shot to the lob at a few powers with the real preview (`previewShot`, the arc players see), draws for real time while following the target, and fires with a random aim error (`BOT.aimError`). It looks ahead while walking: jumps steps on the move (backs up for a run-up if pressed against one), turns at walls and remembers the blocked way for 3 s, stops at pit edges, and rests when too tired to jump. Seeded, so sim runs repeat exactly.
+- **Server room**: runs the `Match`, adds/removes bots, sends `match` (with the tick it applies from) and `arena` (new world: shapes + arena info; snapshots after its tick show it). The dummy is gone (bots replace it). Protocol version 4.
+- **Client**: keeps world versions and match info by tick and switches when the delayed picture reaches them; the snapshot buffer never blends across a world change (`cut`). HUD: match line (arena, time left, kill target), a results panel (winner, scores, next arena countdown), bots marked "(bot)".
+- **Dev**: `MATCH_SECONDS=25` (launch config `server-short`) for short matches while testing; `ARENA=backyard` plays one arena only.
+
+Tests: `shared/test/s2-match.test.ts`. Sim: `bots` (3 bots + 1 still person, 2 min, through the real room), `match` (short matches through the rotation: clean new worlds, slots kept, no damage during results). Netsim: `fill` (1+3 → 2+2 → 1+3 → room closes), `match_cycle` (two people hear the same match/arena story, keep their slots, no bot shot clamped), `dummy` removed.
+
+Measured (sim `bots`, narrow Test Lab): ~140 shots / 2 min, ~60% hit (mostly close range; aim error 0.035–0.09 rad only moved it 70% → 56%), ~20 kills, 0 stuck; room tick 0.8–1.4 ms average with 4 players. A match change costs one ~12 ms tick (building the new world).
+
+Fixed (2026-10-07): the elbow over-bend in sim `bots` and the knee wedged past its limit after a trip into a wall (sim `match`). Both now run with 0 warnings; cause and fix under Phase 4 "Solved in S1/S2" (solver passes + shoulder torque cap).
+
+#### S3: Arrow effects + callouts ✅
+Built:
+- **Effects** (`shared/src/effects.ts`): a hit in the head, an arm or a leg starts that zone's effect for 5 s (`EFFECT.arrowTicks`); a second hit on the same zone restarts it (doesn't stack). In the last second its arrows are `loose` (drawn wiggling), then they fall out (`arrow_drop` event; clients draw them tumbling). Effects end with death (the arrows stay in the body until it respawns). Torso hits only do damage. One `EffectSet` per player in `GameWorld.effects`; snapshots carry them as bits (`fx`: head 1, arm 2, leg 4) plus a loose bit per arrow. Protocol 5.
+- **Body changes** (`BodyMods`, set by the world each tick; the ragdoll stays pure physics, no effect = identical body):
+  - head: floppy neck (15% motor), 30 N extra on the head, 30% upright balance torque → the head swings ~4× more while walking and a hard stop pitches the body ~0.2 rad (normal 0.06) into a stumble;
+  - arm: arms windmill while walking (not while aiming); the bow **swings while drawing** (±0.12 rad, 50-tick period, by draw time);
+  - leg: the hurt leg high-steps while walking (knee 1.15 vs 0.87 rad) and is weaker while standing (same targets as the other leg, so they never fight: 0.002 m drift in 10 s); a **jump misfires**: head thrown back, feet kicked forward, balance off like a trip → backflip onto the face (`ANKLE BREAKER!`).
+- **Stumble** (shared reaction): standing, grounded, full balance, the torso tips past 0.3 rad (0.15 with a head arrow) and is still tipping → a few quick automatic steps that way (0.5 s at 1.8 m/s), facing unchanged. At 0.15 for everyone, bots stumbled ~60×/min after ordinary landings, so the normal body only stumbles from a real tip.
+- **Arm wobble online, preview = reality:** the swing follows how long you've drawn, not the server clock. The browser counts from the input that told the server it started drawing and sends that count with the shot (`fire.drawn`); the server uses it if it's within 8 ticks of its own count (`acceptedDrawTicks`), else clamps (`drawn_clamped`). A shot ends the draw on both sides (server in `fire`, browser in `NetClient.fire`), so drawing again right after a shot starts a fresh count on both. Measured under 120±40 ms lag (13 runs after the fix below): worst difference 2–5 ticks, never clamped, so the client's preview arc and the real arrow use the same number.
+  - *Fixed (2026-10-07): 1 in ~3 `netsim lag` runs had a shot clamped by 40–60 ticks.* The log showed `server: 0`: the server saw the aim-off input (seq n+1) **before** the `fire` (seq n), so the draw had already ended. Cause: the fake-lag code (netsim players, and the browser's lag setting) gave each message its own `setTimeout`; two messages sent in the same moment could get the same due time, and the second timer, measured from a slightly later "now", expired first. Real connections never reorder, so the game code was right and the test tool was wrong. Fix: `LagLine` (`shared/src/net/lag.ts`), one ordered queue + one timer per direction, used by both. `drawn_clamped` now carries where the server's draw started and ended (`startTick/startSeq/endTick/endSeq/endWhy`, `wasDrawing`), and the browser's `shot_sent` carries `drawFrom` (the input seq it counted from), so a future mismatch explains itself.
+- **Callouts, picked by the server** (`pickCallout`, one per hit, rarest wins): `SNIPED!` (25 m+) > `CRACKED!` (head) > `AIRBALL!` (victim in the air) > `ANKLE BREAKER!` (leg hit, or a misfired jump) > `POINT BLANK!` (3 m or less); `RING OUT!` for pit deaths. Sent as `callout` events (kind, victim, by, position, size = impact speed share); clients show comic banners (placeholder look), bigger for faster hits. Damage numbers stay small underneath.
+
+Tests: `shared/test/s3-effects.test.ts` (rules, refresh/expiry/loose/drop, wobble preview = real arrow with predErr 0, callout order, draw-time check, snapshot bits, body mods, misfire); `shared/test/s3-draw-time.test.ts` (`LagLine` keeps order under same-moment sends; the real room counts the same draw time as the client for aim → fire → aim-off, explains a reordered aim-off in `drawn_clamped`, and restarts the count after a shot). Sim: `head_sway`, `arm_flail`, `leg_limp`, `jump_misfire`, `stumble` (each compared with the normal body). Netsim: `basic` shows callouts in the shared story; `lag` measures client vs server draw time and checks that shots go through under lag: every `fire` gets a reply, and refusals are only fair game reasons (`dead`, `arms_down`, `match_over`), never lag ones (`not_drawing`, `too_weak`). It used to require "more than 5 arrows fired", which failed on a busy machine or after a few deaths.
+  - *Fixed (2026-10-07): `netsim lag` "smoothing ran dry X%" failed on a busy machine (0.25–2.7% normally, one 3.9%).* The server, both bots and the 16 ms frame timer share one Node process; when it's busy, the server ticks late, the fake-lag timers fire late and the frame timer skips (gaps up to 40 ms; it only draws ~345 of ~540 frames on every run, partly because Windows timers are coarse), so the buffer runs dry for machine reasons, not network ones. Options weighed: skipping frames right after a stall only hides the first frame, while snapshots stay late for a while after; counting only on-time snapshots needs a rule for "on time" anyway. Chosen: **judge on a perfect clock**. Each bot logs every snapshot with when the socket gave it over and the fake delay drawn for it (`Bot.netLog`). `idealArrivals()` rebuilds when it would have arrived with only the fake network: sent exactly on its tick (server clock set by the most punctual snapshot) + its delay, never before the one before. `replayBuffer` (`interp.ts`) runs a fresh `SnapshotBuffer` over that, a frame every 1/60 s over the same window. Same buffer code, same real snapshot stream, same random delays; only machine lateness is gone. Check: under 1% dry. The real-clock number is still printed (and logged as `lag_smoothing`) next to the frame count and process stalls, so a busy machine is visible but doesn't fail the run. Result: 0% on all 8 runs on 2026-10-07 (real clock 0.85–3.4% on the same runs, one of which would have failed the old check). Test (`phase4.test.ts`): on the perfect clock, 60 ms + 0–40 ms jitter → 0% dry; 0–80 ms → 5–9%, so the 1% limit does catch a buffer that's too short (the cliff starts at ~60 ms of jitter, ~1.5%).
+
+#### S4: Body + movement + skin ✅
+Body (physics; all numbers in constants, measured with sim `body_report`, which prints one row: mass, standing drift, walk speed + lean, head swing, stop skid/tilt/stumbles/falls, jump rise, trip get-up, idle arm swing, joint warnings):
+- **Clown boots:** lower legs 2.5× denser (`RAGDOLL.bootDensity`): 7.95 → 10.2 kg, weight low down.
+- **Head hitbox ×1.15** (r 0.2 → 0.23); the drawn head is ×1.6 (skin).
+- **Spaghetti arms:** when not drawing, shoulders only damp (`MOTOR.armLimp`) and elbows keep 3% strength; sideways air drag on the arm parts (`MOTOR.armDrag`) makes them trail behind when running (idle arm swing 0.13 → 0.41 rad). The torso gets the same push forward at the shoulder, so the drag doesn't slow or tip the body: plain drag leaned runners backwards, fought the walk lean and (up/down) cut jumps from 1.34 to 1.18 m. Shots are unaffected (they start at shoulder + arm length). Side effect: a standing, idle player's arms hang behind their torso and can't be hit from the side; arms stick out while drawing or running.
+- **Dash feel:** the torso leans into the walk (`WALK.lean` 0.12 rad) and into the slide when you stop (`WALK.brakeLean` 0.25, `WALK.brake` 25 → 15): a stop pitches ~0.25 rad forward and snaps back. Lean directions come from the walk key / the way you were going when the brake began, not the measured speed (its sign flips near zero and made the lean rock and run away). Leans above ~0.25 run away; with a head arrow there's no walk lean (heavy head + lean toppled the runner).
+- **Stumble rules** (S3, refined): only a real push sets off a `tip` stumble (not a stop's own lean, not the tick you let go); with a head arrow a stop from running (≥ 2 m/s) always stumbles (`head_stop`), as the spec says.
+- **Get-up:** the heavier body couldn't stand during the trip's 0.6 s balance ramp and waited for full balance (get-up 87 ticks). Ramp shortened to 16 ticks → 58 ticks (baseline 55).
+- **Big Head Mode hook** (S7 chaos round): `world.setBigHeads(on)`: head hitbox ×2 with the same weight (density / scale²), headshot multiplier ×2 instead of ×5; joining players get it too; the head scale is in the snapshot header (protocol 6) so the client's preview and stand-in arrows use the same head size.
+
+Skin (client only, `client/src/skin.ts`; the final look replaces this file):
+- Placeholder cartoon: big head (×1.6) with eyes looking where you face (X eyes when dead), white ring around you, thin outlined limbs (back limbs darker), rounded torso, dark boots, 8 saturated player colors by slot, spinning-leg blur when running faster than 2 m/s (drawn only; the server doesn't send speeds, the client measures them from the poses on screen).
+- Pastel scenery: mint background, apricot ground, off-white blocks, wooden crates, apples with leaves. White/black star sparks on hits. HUD text on light panels.
+- **F2:** physics outlines on a dark background + debug info (now off by default).
+
+Tests: `shared/test/s4-body.test.ts` (boots and head size, launch point with loose arms + preview = arrow, Big Head on/off restores exactly, damage multiplier, snapshot head scale, stop stumble rules). Sim: `body_report`. Two S3 tests updated for the new body (an arm hit needs the arm out; the kill shot waits until the dummy stands still).
+
+Measured: bots hit ~44% of shots (was ~60%), partly because idle arms are hidden behind the torso.
+
+#### S5: Power-ups + wall pins ✅
+Built (`shared/src/specials.ts`, numbers in `PICKUP` / `SPECIAL` / `PIN` / `SPLAT`):
+- **Bubbles** at each arena's pickup spots (Test Lab: over the pit; Backyard got one at (16, 4)). Shoot one and you hold its special arrow; your next shot is that arrow. A bubble shows what it holds and refills after 15 s with a new random one (seeded; tests/netsim can fix the order with `pickupOrder`). A held arrow is lost on death. **No cheating by design:** the server keeps what you hold and uses it on your next shot; the fire message has no field for it (a client that adds one is ignored).
+- **Arrows** (all decided on the server):
+  - **Boxing Glove:** 0 damage but counts as the last hit (a ring-out after it credits the shooter). Every part gets +14 m/s along the arrow + lift, balance off 1.5 s, `OUTTA HERE!`. Measured: 15.5 m/s into the wall 3 m away → `SPLAT!`. It launches people right over gaps (2 m bridge gap in the Test Lab: flew 11 m), so pits catch only short landings.
+  - **Helium Balloon:** half damage; a balloon (a shootable target) is tied to the part. Torso: up to 1.2× body weight, easing off near 1.2 m/s, so the victim floats gently (1.45 m in 1.5 s; a flat 1.2× lift rocketed 4.5 m in 1.5 s and kept going). Leg: tied to the foot, and that leg goes slack (leg motors need thousands of N·m to bend; a balloon gives ~100), so the foot floats up (1.13 m) while the body stays down: a one-foot hop. Shoot the balloon: pop, they drop.
+  - **Oil:** a 4 m puddle on the floor under the hit, 8 s. Feet in it have no grip. Standing: the legs slide into a full split (2.3 rad; the one place the legs get different targets on purpose). Walking: legs scramble 0.5 s, then a belly slide at 7 m/s with balance off (`SLIP 'N SLIDE!`).
+  - **Plunger:** half damage; a rope drags the victim toward the shooter for 1.5 s (2.9 m measured).
+  - **Sticky Bomb:** sticks, goes off after 2 s: everyone within 4.5 m pushed away (up to 12 m/s), knocked down, up to 15 damage (`KABOOM!`).
+  - **Banana:** splits into three after 12 ticks of flight, ±0.12 rad. The preview shows all three paths (`traceSplitShot`, the same stepping as the real arrows): measured worst preview error 0.001 m.
+  - **Swap:** shooter and victim trade places (bodies rebuilt at each other's feet; refused if there's no room).
+  - **Feather:** 0 damage; the victim laughs 1.5 s (arms flail, can't aim).
+- **Wall pins** (normal arrows): a hit on an arm or leg with a wall within 0.6 m behind it (along the arrow) nails that limb there with a hinge joint for 2 s (`PINNED!`). Each jump press cuts 0.3 s (and doesn't jump). Measured: held within 0.4 m of the wall while trying to walk away; mashing freed them in 31 ticks. Pins end with the effect, on death and when the body is removed.
+- **SPLAT!:** any body moving sideways ≥ 6 m/s that loses 60% of it in one tick with a wall right ahead (a dent is drawn there for 4 s).
+- **Effects** gained `balloon`, `laugh`, `pinned` (per-kind lengths, `EFFECT_MAX_TICKS`) and an `oiled` bit; body mods gained `oiled`, `laughing`, `floatLeg`; the ragdoll gained `stun(ticks)` (glove, bomb, oil slide).
+- **Network** (protocol 7): each player's held arrow, each bubble's contents, each arrow's kind, and a props list (puddles, balloons with the part they're tied to, ropes) in snapshots; events `pickup`, `wall_splat`, `balloon_pop`, `explosion`, `swap`. Client: bubbles with a letter, arrow heads per kind, puddles/balloons/ropes, blast rings, pops, dents, the new callouts, `NEXT ARROW: ...` and `PINNED! mash JUMP`. Offline (`?mode=local`), keys 1–8 put a special arrow in your bow for testing.
+
+Tests: `shared/test/s5-pickups.test.ts` (bubble pickup/next shot/refill, lost on death, a client can't claim one, glove no damage + last hit + splat, oil puddle/oiled/dries, feather, swap, bomb, banana pieces, pins + mash + cleanup, snapshot round trip). Sim: `pickup`, `glove`, `balloon`, `balloon_leg`, `oil_stand`, `oil_walk`, `pin`, `plunger`, `bomb`, `banana`, `swap`, `feather`. Netsim: `pickups` (held arrow seen by everyone, puddle seen by a late joiner, claimed specials ignored).
+
+#### S6: Hazards + floor types ✅
+Built (`shared/src/hazards.ts`, data in arena files, numbers in `HAZARD`):
+- **Arena data:** `hazards` (trampoline, seesaw, wrecking_ball, wind, conveyor) and a `surface` on any solid (`ice`, `bouncy`). The validator checks they're inside the arena, pads and belts lie on a floor, and a ball can't swing out. The narrow size keeps hazards whose middle is inside it. Clients get them (and the surfaces) in the arena info (protocol 8). Ice Rink / Bouncy Castle are now just data.
+- **Trampoline:** a marked strip of the floor (no body: a 0.3 m pad wedged walkers against its side and even 8 cm stopped their feet). Standing on it launches you up at its power (once per 20 ticks). Test Lab: one on each lowest step, power 19: hold toward the perch while flying and you land on it (the perches were spawn-only until now).
+- **Seesaw:** a plank on a hinge (±0.45 rad). An arrow presses the end it hits into the plank (a sideways push at the pivot's height barely turns it). **Fixed later (arena drafting):** the plank rested on its own pivot block, which held it level, so a person's weight couldn't tip it (Rapier lets jointed bodies touch unless told not to: `setContactsEnabled(false)`). Now a person tips it to the limit; to launch them, lob onto the raised end from above (a flat shot hits its underside and pushes it up). Measured: a weak lob lifts the player on the low end 1.05 m (it was 2.36 m on the stuck-level plank).
+- **Wrecking ball:** a heavy ball on a hinge from an anchor. An arrow swings it at 7 m/s; moving faster than 3 m/s it knocks players down (`BONK!`, balance off 1 s) and the hit counts for whoever swung it in the last 3 s (kill credit, e.g. into a pit).
+- **Wind:** a box that pushes arrows (fully) and players (half). **Always on, not gusts**: a gust's timing can't be known exactly when you release, and preview = reality wins. Arrows step with `stepArrow(pos, vel, DT, wind)`; the server preview, the client preview (`windAt` from the arena info) and the stand-in arrows all use it. Measured: arrows bent up to 1.56 m, preview error 0; a player on the (icy) bridge is pushed 3.7 m in 1 s.
+- **Conveyor:** the floor moves: walking is relative to it, standing still rides it (feet slide over it like walking). Measured: carried at 1.53 m/s on a 1.5 m/s belt.
+- **Floor types:** ice = friction 0.02 with the Min combine rule (it beats the feet's Average): a stop slides 2.66 m (0.02 m normally). Bouncy = restitution 0.95 with Max: a 3 m drop rebounds 2.8 m (0.05 m normally).
+- **Test Lab** now has one of each: trampolines on the lowest steps, wind over the pit (blowing right), a conveyor on the left bridge (toward the gap), ice on the right bridge, a seesaw and a bouncy block in the left yard, a wrecking ball in the right yard (one crate and two outer spawns removed; 8 spawns, 6 in the narrow size). Sim `step_climb` uses it without hazards (it tests the stairs).
+- **Client:** trampoline strips, moving belt chevrons, drifting wind streaks, ice/bouncy floor colours, the ball with its chain, `BONK!`.
+
+Tests: `shared/test/s6-hazards.test.ts` (checks catch bad hazards, narrow keeps the middle ones, wind sum, ice/bouncy combine rules really apply, wind preview = arrow, the client's plain-shape preview agrees with the server's through the wind, trampoline launch, conveyor carry, wrecking-ball credit). Sim: `trampoline`, `seesaw`, `wrecking_ball`, `wind`, `conveyor`, `ice_floor`, `bouncy_floor`. Netsim: `hazards` (6 players in the full Test Lab: a shot ball swings 1.9 m; all players see identical ball/seesaw poses at every tick; nobody stuck).
+
+#### S7: Match spice ✅
+Built (`shared/src/spice.ts`, numbers in `CROWN`, `MODIFIER`, `STREAK`; `REPLAY` removed in L7):
+- **Score + bounty crown:** 1 point per kill. With 3+ players the leader wears a crown (snapshot flag); killing them is worth 2 points and takes the crown. Matches end on score (`killTarget` is now a score target). A self-own (own bomb / glove) scores for nobody.
+- **Callouts:** `REVENGE!` (kill whoever last killed you), `DOUBLE KILL!` (2 kills within 3 s), `SELF-OWN!`, `HUMBLED!` (hit while taunting).
+- **Taunt (T):** arms pump while standing still on the ground; purely for show (and for getting HUMBLED).
+- **Chaos rounds:** every 60 s a 20 s round, announced 3 s ahead (match info, so late joiners know too): Moon Gravity (gravity ×0.35), Big Head Mode, Boxing Gloves Only (every shot is a glove; a held special waits), Oil Floor, Everyone Has Balloons. Order: each once, shuffled per match (seeded). Rounds that don't fit before the end are skipped. Each puts everything back exactly when it ends (tested). Short test matches (`MATCH_SECONDS`) scale rounds down so one still happens.
+  - The round switches on **after** the world step of its start tick, matching the client's rule `modifierOn` (start ≤ tick < end): shots happen between ticks, so preview and server agree at the edge.
+  - **Moon Gravity keeps preview = reality:** physics gravity drops, and arrows (not physics bodies) get the missing share as a push in the same field as wind (`arrowField`). The client adds the same push from `gravityShareAt(match.modifier, tick)`. Tested: prediction error 0.
+- **Awards + best moment:** each player's match tally (splats, self-owns, longest hit, crown time, times pinned) gives up to 5 awards on the results screen. Every callout scores excitement (`EXCITEMENT` + impact size); the top one is the match's best moment.
+- **Replays (client only):** **[Removed 2026-10-09 (L7), asked by the user: replays stopped the game mid-match. The results screen still names the best moment as text; `sampleSnapshots` in `shared/src/net/interp.ts` stays, so they can come back.]** Was: the client keeps the raw snapshots of the last ~3 minutes (`NetClient.history`, ~1.6 MB). When you die: the moments before it in slow motion (×0.75), following you; the start is cut if needed so it ends before you respawn. On the results screen: the best moment on a loop (×0.5). Frames come from `sampleSnapshots` (the same blending as live play); aiming and the preview are off while a replay plays; the score line stays live.
+- **Hats (cosmetic):** picked on the join screen (sent in `join`, checked by `isHat`, in the roster). 8 hats; 2 open, the rest unlock from progress kept on the device (`localStorage`, counted from shown events by `countProgress`): 10 kills, 10 pins, 5 self-owns, 10 splats, 5 ring-outs, 3 wins. A headshot knocks the hat off until respawn.
+- **Protocol 9:** score + crown per player in snapshots, chaos round / awards / best moment in match info, `taunt` in input, `hat` in join and roster.
+
+Tests: `shared/test/s7-spice.test.ts` (crown + score, no crown under 3 players, revenge / double kill / self-own, humbled, each round restores the world exactly, Moon Gravity preview exact, match schedule timing, awards, hats + message checks, snapshot score/crown, progress counting, replay frame blending). Sim: `chaos` (all 5 rounds in one match, crown changes, awards, best moment). Netsim: `chaos` (two players hear the same round at the same ticks; a late joiner's welcome has it). Also: `vitest.config.ts` sets a 30 s test limit (physics tests take 3–8 s and failed at random under load with the 5 s default), and netsim `hazards` now waits for a snapshot of the new arena before aiming (it could read the old world's and never shoot).
+
+#### L0: Losing body parts (spike) ✅
+Built in `shared/src/ragdoll.ts` (numbers in `LIMB`); the game doesn't use it yet (L4 adds the damage ladders):
+- `stumpLeg(side)`: cuts the knee (both halves of the hinge: the multibody joint and the motor joint), the shin becomes a **loose piece** (`world.releasePart`: relabelled `piece:<id>:<part>`, no longer the player's body, so hits on it hurt nobody; normal grip and a small tumble kick), and the thigh's shape shrinks to a stump at its hip end. `loseForearm(side)` does the same at the elbow.
+- Everything that assumed all 10 parts: `attached()` (walk/jump pushes, speed, mass), `feet()` + `footPoint()` (ground check, grip, balance stretch, trips: the stump is the foot), `liveJoints()` (motors, limits, joint checks, snapshot log).
+- One leg left: hops (one per `hopStride` m, at walking speed), the good leg points straight down in the world with a slight knee bend, the stump is held up and forward. Two stumps: walk ×0.6, jump speed ×0.7.
+- Lost pieces stay in `parts` (so they're removed with the body on respawn).
+- Tests: `shared/test/l0-limbs.test.ts`. Sim: `limb_loss` (whole / one leg / two stumps / no hand / lost mid-walk: upright %, speed, jump, aim, piece lying flat, joint warnings).
+
+#### L1: Look ✅
+"Moody world, bright players". Drawing only, plus arena palettes as data; no physics changed.
+- **Arena palette** (`ArenaPalette` in `arena.ts`, one per arena file): sky gradient (top/bottom), `horizon` (the ground line the silhouettes stand on), 2–3 parallax layers listed far to near (`kind`: hills, trees, houses, factory, chains; colour; `depth` = how much it moves with the camera, 0..1; `height` in m), `terrain` + one bright `accent` edge, optional `glow` spots (screen shares, alpha), `dust` (for L2), `seed`. Backyard: night suburb, crimson grass. Test Lab: night foundry, chains, amber edges. Arenas without one (test fixtures, drafts) get `DEFAULT_PALETTE`. It travels in the arena info (protocol 10).
+- **Readability check** (`shared/src/palette.ts`, `paletteProblems`, run by `validateArena`): every player colour and the tracer colour need a contrast ratio (WCAG, 1–21) of at least 3 against every backdrop colour (sky ends, layers, terrain, each glow at its brightest); backdrop colours are dark (luminance ≤ 0.05) and dull (chroma ≤ 0.3); farther layers move less and are lighter; glows stay soft (alpha ≤ 0.3). Measured worst case: 3.1 (Backyard moon glow vs the red player), the rest 3.7–5.5.
+- **Player colours moved to shared** (`PLAYER_COLORS`, `colorOfSlot`, `TRACER_COLOR`), so the test can check them. Two were too dark for dark arenas and were brightened: purple `0xa64dff → 0xb388ff`, red `0xff1744 → 0xff3355`.
+- **Backdrop** (`client/src/backdrop.ts`, shapes in `client/src/silhouettes.ts`): silhouettes are generated by code from the seed (seeded random numbers, so every screen draws the same skyline) into one 1024 px wide tile per layer that repeats seamlessly. Drawn ONCE into canvas textures when the arena loads; each layer is a repeating sprite with a Phaser scroll factor = its depth, so a frame costs a few textured rectangles. Each layer's ground line is placed where the arena's ground usually is on screen; a plain colour fills below it. The sky (gradient + glows) is fixed to the screen and oversized for zoom-out. Hidden in the F2 debug view. Measured: ~9 ms per rebuild, 35–75 ms for the page's first one (warm-up), 0.5 ms when the textures are cached (next match in the same arena).
+- **Skin** (`client/src/skin.ts`): one flat colour per player, no outline, no face. Round head drawn at its hitbox size (`RAGDOLL.head.r` × head scale). Limbs are 0.14 m sticks with round ends (started at 0.1, which looked thin next to the torso; 0.14 is about the width of their hitboxes), the torso a 0.2 m stick; back limbs ×0.68 darker. Dead: colour ×0.42 and alpha 0.6 (no X eyes). Boots are no longer drawn (still physics), the leg-blur wheel and the client's speed measuring are gone. Hats and the crown are flat (no outlines), sized 1.25 head radii; the top hat is charcoal so it shows on the dark sky. Terrain: palette fill + 3 px accent edge on top; ice/bouncy floors keep their own edge colour. Crates and the wrecking ball are dull; apples stay bright. HUD and name tags: light text on dark translucent panels.
+- **Callouts in two sizes** (`CALLOUT_SIZE` in `effects.ts`, drawn by `client/src/callouts.ts`): **tags** (13 kinds) are small text (60% of the old size, no shape behind) above the victim's bars, following the head, 0.6 s, one per player (a new one replaces the old), kept inside the screen. **Banners** (`OUTTA HERE!`, `KABOOM!`, `RING OUT!`, `REVENGE!`, `DOUBLE KILL`) show at the top of the screen in the HUD under the chaos-round headline, with "who on whom" underneath, 1.2 s each, at most 2 waiting (older ones dropped and logged). Damage numbers are 11 px (13 for headshots).
+- **Hit feedback** (`client/src/fx.ts`, `HitFx`): a white spark (6 rays, 0.16 s) + 4 small chips in the hit part's own colour (no blood, no splashes), the hit part drawn white for 2 frames (the part nearest the hit point), and a small screen shake (110 ms) only on hits that involve you with 25+ damage or a headshot. Particles are drawn into the scene's one Graphics (no object per particle) and capped at 160 (`fx_capped`); L2's dust will share the cap. Aim preview dots are in your own colour and fade along the path. Flying arrows use the tracer colour.
+- Tests: `shared/test/l1-look.test.ts` (every arena has a palette that passes; palette reaches clients at both sizes and as JSON; default palette; the check catches a bright sky, wrong layer order, a strong glow, too few layers, and the validator reports it; every callout kind has a size and the banners match the plan; the silhouette generator repeats for a seed, stays inside its tile and wraps without a seam).
+
+#### L2: Movement feel + dust ✅
+- Numbers (`WALK`, `MOVE`): run 5.5 m/s, accel 37, brake 45, air control 0.65, no slowdown while aiming, lean 0.06 / brake lean 0.1, stride 1.7 m with full-size steps from 3 m/s (`fullStrideSpeed`).
+- Jumps (`Ragdoll.handleJump`): a press is buffered for `bufferTicks` (lands → jumps), coyote time `coyoteTicks` after leaving the ground, letting go within `cutTicks` while rising keeps `cutKeep` of the upward speed (tap = hop, hold = full); a jump cancels any falling speed first. Bots hold jump `BOT.jumpHoldTicks`.
+- Body: feet slippery in the air (no clinging to walls), a head arrow caps running (`EFFECT_BODY.headRunFactor`), walking while pinned is weak (`pinnedWalk`, new `BodyMods.pinned`).
+- Arrows: `GameWorld.resolveHit` is the one place an arrow meets something (apple, bubble/balloon, or stick), for flight and point-blank shots; `dropArrowsOn(body)` before a balloon is removed.
+- Dust (client): `client/src/dust.ts` `DustTracker` turns feet + `grounded` (already in snapshots) into puffs; `HitFx.puff` draws them in the arena's dust colour (shares the L1 particle cap).
+- Tests: `shared/test/l2-movement.test.ts`, `shared/test/l2-dust.test.ts`, a point-blank balloon regression in `s7-spice.test.ts`. Sim: `feel_report` (each feel number vs a target range, pass/fail per line).
+
+#### L3: The gun ✅
+The bow is gone. Numbers in `GUN` (all *start* values): 32 m/s bullets, 0.7 s reload (42 ticks), 12 stamina per shot, 0.5 s preview, server grace 6 ticks.
+- **Shared rules** (`rules.ts`): `PlayerStats.readyAt` / `lastShotTick`, `fireBlock(tick)` (dead / arms_down / fire_too_soon), `shoot(tick)` (reload + stamina; the stamina rest starts when the reload is done), `reloadLeft`. A respawned gun is ready at once.
+- **`GameWorld.fire(id, aim, swingTick?)` returns `{ arrow } | { arrow: null, refused }`**: the one place shots are allowed (invalid_aim, dead, match_over, arms_down, laughing, fire_too_soon). `aim.ts`: `Aim` is `{ angle }` only, `aimAt(from, to)`, one bullet speed. Logs `fire`, `fire_too_soon`, `reload_done` (after the tick it completes); anomaly `shots_too_close` (error).
+- **Arms always aim** (`ragdoll.ts`): the gun arm points at the aim (or ahead with no aim input), the back hand on the pump; they hang with `BodyMods.armsDown` (no stamina, laughing), while stunned (`stun()` now also sets `stunnedUntil`), and when dead. Arm hit: the back arm windmills while walking, the gun arm aims with the swing. Taunting overrides the arms.
+- **Bullets vanish** (`world.strike`): push, damage/effects/trip/pin from the hit itself, `impact` event for walls (hole) and crates (dust), then gone. Balloon rounds vanish (the balloon prop stays); a plunger stays only while its rope pulls; a sticky bomb until it goes off. Effects lost their arrow list and the "loose" last second (`arrow_dropped`, `arrow_drop` and the `loose` snapshot bit are gone). `ARROW.maxStuck` / `penetration` removed. Anomaly `projectile_after_hit` (error, removes it).
+- **Arm-hit swing by server tick** (`effects.ts`: `swingOffset`, `swungAim`, `acceptedSwingTick`; window `EFFECT.swingBehindTicks` 15 / `swingAheadTicks` 3). See Multiplayer.
+- **Network (protocol 11):** input aim = angle; fire = angle + swing; snapshots carry `reload` (ticks left) per player and no loose bit (~447 → ~365 B in netsim `basic`, no stuck arrows). Room: `fire_queued` early-shot grace, `swing_ok` / `swing_clamped`.
+- **Bots** (`bot.ts`): aim for 12-30 ticks (reaction), fire when the gun is ready, then 55% keep shooting the same target on the next reload, else walk; below 26 stamina stop shooting until 60 (`bot_rest why: shots`). One speed, so the aim search is 7 arcs (flat → lob).
+- **Client:** `PlayerInput` = pointer (screen px) + trigger (held or clicked since the last frame); `FollowCamera` = fixed ~36 m view (zoom 0.89; never wider than the arena) leaning a third of the way toward the pointer; `gun-draw.ts` = the flat pump gun at the front hand (mid-grey metal so it shows on the night arenas, a stripe in your colour, the pump slides back and forward during the reload, a special round's colour on the muzzle), bullets as a bright tracer + a trail in the shooter's colour, `BulletHoles` (wall holes, up to 150, cleared each match); HUD reticle at the pointer with the reload ring (dim red when you can't shoot). The crosshair cursor. Stand-in bullets wait for the reload; `placeholder_landed` / `placeholder_gone` end a stand-in whose real bullet vanished before any snapshot showed it (it hit a moving player the stand-in flew past: this was a `placeholder_timeout` warning in the browser check).
+- **Body re-tune (found by the old tests, not a guess):** with the gun always held out, the run lean ran away at 5.5 m/s (0.27 rad, stops slid 1.2 m into a stumble; the old bow did it too when held drawn, 0.2) → `BALANCE.kp` 260 → 400 (lean 0.11, stop 0.18 m). With a head hit, 0.3 of that balance made every stop a fall (6/6) → `EFFECT_BODY.headBalanceShare` 0.4 (0 falls, every stop still stumbles). `feel_report` all ok; `body_report`: lean 0.14, stop skid 0.12 m, trip get-up 43 ticks, idle arm swing 1.69 rad (arms held out now).
+- **Found on the way (S7 bug, not L3):** right after Big Head Mode switched on, every ray test saw nothing until the next step (one zero-length step after a collider resize leaves the queries blind): previews, point-blank checks and bot aiming were blind for that tick. `refreshQueries` now does two zero steps.
+- Measured: sim `gun` (32 m/s, 1.43 shots/s held, preview ~16 m, drop 1 m at 10 m / 3.9 m at 20 m / 8.8 m at 30 m; ±2° aim error hits 10/10 at 6 m, 8/10 at 12 and 20 m), `stamina` (9 shots then arms down after 5.6 s, back 2.5 s after the last shot), `bots` (208 shots / 2 min, 44% hit, 24 kills, rested 36×, arms emptied 3×). Netsim `lag` (120±40 ms): swing ticks 9-12 behind the server (window 15), none clamped; 8 swinging shots landed within 0.24 cm of the client's own preview. `cheat`: 10 fires in 0.2 s → 1 bullet + 9 `fire_too_soon`.
+- 32 m/s everywhere changes the arenas: in the Backyard lobs fly out over the 18 m walls, and the thin wall + crate hide p2's legs from p1's spot (tests now step past the wall); the Test Lab seesaw can only be hit from above by a quick shot from the steps (a floor lob takes 3 s to come down), and that throws the player 3.6 m (the bow's slow lob: 1 m). For L6.
+- Tests: `shared/test/l3-gun.test.ts` (reload timing, 9-shot stamina, refusal reasons, arms always aim, vanishing bullets, plunger, the projectile anomaly, Big Head rays, the room's early-shot queue, spam, swing window + preview = real bullet), `s3-lag-line.test.ts` (was s3-draw-time), helper `gun-helpers.ts`; every older test updated. Sim: `gun`, `stamina` rewritten; netsim `lag` (swing window + swinging preview vs server), `cheat` (fire spam).
+
+#### L4: Body damage ✅
+Hits add up over one life. Numbers in `DAMAGE` and `LIMB` (all *start* values).
+- **Rules** (`rules.ts`, `BodyDamage`, one per player in `world.damage`): the leg ladder (`legHit(side)` → trip / drag / stump; `legStage` 0-4, `LEG_STAGE_NAMES`; `draggingLeg`, `stumps`), `upperHit()` (the back hand at `DAMAGE.handAfterHits` = 3), `dents`, `holes` (up to 24), `repair()` (apple: all but holes), `reset()` (respawn). `reloadTicksFor(oneHanded)`.
+- **World** (`GameWorld.bodyHit(id, part, dirX, cause)`, called for every normal bullet hit; public for tests/tools): turns a ladder step into physics: `trip`, `stumpLeg`, `loseForearm('back')`; `BodyMods.dragLeg` each tick (was the S3 `limpLeg`; the 5 s leg effect is gone: legs only climb the ladder now; head and arm hits keep their 5 s effects). `dent(id, part, by)` from the glove. `repairBody(id)`: a red apple; the body is rebuilt standing on the floor under it (a fixed-only ray: `castFixed`, now also used by specials), waiting up to 3 s for room (`repair_waiting` / `repair_given_up`); shot-off pieces don't block standing. Respawn resets. `rebuild` re-applies damage to a new body (a swap keeps your stumps). Damage events carry the bullet `hole` (part index + spot in its frame); new events `damage_stage`, `repaired`.
+- **Ragdoll:** the dragging limp: the hurt leg hangs back (hip 0.35, knee 0.6, motors at 6%), its foot slippery for good; the body uses L0's one-leg hop on the good leg (`standingLegs`), at `LIMB.dragSpeed` 0.75; jumps are normal (the S3 jump misfire was removed 2026-10-08: frustrating to play; `jump_misfire` and its callout are gone). `footPoints()` (the real soles: shin or stump end) replaced every place that read the shins as feet (trampolines, oil, `feetOf`): a shot-off shin lying on a trampoline kept launching its stumped owner out of the arena (sim chaos). A leg balloon on a stumped leg ties to the stump.
+- **One-handed gun:** reload ×1.5; `oneHandOffset(sinceShot)` = 0.35 rad × (1 − t/96) × sin(2π t/22), added by `swungAim(aim, swingTick, armHit, oneHandShotTick)`, the same function the server, the preview and the bots use. Online the shot reply carries the server tick the bullet was fired on (`shot.tick` → `NetClient.lastShotTick`): working it out from the snapshots' reload countdown was off by 21 ticks when the hand went mid-reload (netsim `lag`). A hand shot off mid-reload makes that reload a one-handed one on both sides (server: `readyAt` stretched in `bodyHit`; client: `NetClient.updateReload`): netsim found two clients sending the next shot on the two-handed clock (`fire_too_soon`).
+- **Network (protocol 12):** per player in snapshots `lost` and `dents` (bits by `PART_NAMES` index: `partBits`, `hasPart`) and `legStage` (+5 bytes); holes come with the damage events. **State rule:** anything that lasts is server state sent in snapshots (current state) or the welcome (built up so far); events are only moments. The welcome (protocol 13) carries everyone's current bullet holes, the match's wall bullet holes (`world.wallHoles`, `world.impact()`, up to `DAMAGE.maxWallHoles` = 150) and whose hat a headshot knocked off (`BodyDamage.hatOff`), so a late joiner sees the same game.
+- **Client** (`skin.ts`, `DAMAGE_LOOK`): a thigh whose shin is gone is drawn as a stump (its hip end, `LIMB.stumpShare`) with a flat darker cut; shot-off pieces are drawn where they lie with a cut end; the arm where the hand was gets a cut; a dented limb or torso is drawn bent, a dented head with a dark bite; bullet holes as small dark dots carried by their part. Your own reload ring and pump follow the one-handed reload. HUD line: what's broken, and that a red apple fixes it.
+- **Found and fixed on the way:** a wall pin on a body lying down: getting up with a thigh nailed to a step bent the knee 0.22 rad backward (sim chaos); pins are now only for a body that's up (they were built and tested that way). Hazards and specials pushed shot-off pieces as if they were the body (`attached()` now).
+- **Anomalies:** `stage_skipped` / `stage_backwards` (error, checked where the ladder moves), `body_state_mismatch` (error: the rules and the body disagree about stumps or the hand), `stage_cant_stand` (a damaged body down 5 s with full balance), `piece_left_behind` (error, after respawn).
+- Measured (sim `damage_report`, each stage reached through the real ladder): whole 5.46 m/s, jump 1.34 m; dragging 0.75× speed, jump 0.99×; one stump 1× / 1×; one stump + tripped other leg 1× / 1×; two stumps 0.6× / 0.48× (head 0.8 m lower); one hand 1× / 1×; all 100% upright, get-up after a trip 0.8-1.0 s, no joint warnings. Netsim `damage`: three clients (one joining late) see the same stump and missing hand at the same ticks, all cleared after respawn; `lag` (120±40 ms, now without filler bots, which shot the shooter mid-test): one-handed wobble shots land within ~0.3 cm of the client's preview; arm-hit swing shots: the client's angle is exact (≤ 0.11 cm when traced from the server's real start point), but the plain preview can be ~10 cm off at 6 m, because the whipping gun arm sways the shooter's shoulder between the client's snapshot and the server's tick.
+- Tests: `shared/test/l4-damage.test.ts` (the ladder, either leg moves it, the hand, repair keeps holes, reset, the world's stages/logs, holes in damage events, apple repair, respawn leaves no piece, swap keeps damage, the mismatch anomaly, feet never a lost piece, no pin on a lying body, one-handed reload and wobble preview = bullet, snapshot bits); `l0-limbs.test.ts` keeps the rules in step with its direct cuts; glove test (damage + dent). Sim: `damage_report` (new), `leg_limp` uses the dragging stage, `drag_jump` (was `jump_misfire`) checks a normal jump with it, `glove`, `limb_loss` updated. Netsim: `damage` (new; late joiner gets the holes too), `lag` one-handed phase. Vitest: the welcome carries body holes, wall holes and hats knocked off. Sim `stump_trampoline`: two stumps on a pad are launched 8.1 m.
+
+#### L5: Critical hits + melee ✅
+Numbers in `MELEE` (all *start* values). Decisions in `modifications.md` (L5).
+- **Rules** (`melee.ts`, `GameWorld.melee`): `onBulletHit` (called after every normal bullet hit on someone else: airborne + gun + dice < `critAirChance`), `onGlove` / `onSplat` (specials: a SPLAT within `gloveSplatTicks` of a glove hit), `crit()` (weapon by the dice, a held special round is lost, `dropGun`, `crit` event, `DISARMED!` callout). `BodyDamage` gained `weapon`, `broken` (upper part names), `meleeHits`.
+- **Swings:** `GameWorld.fire` is still the one gate (alive, cooldown, stamina...); for a melee player it calls `PlayerStats.shoot(tick, MELEE.cooldownTicks, MELEE.stamina)` and `melee.startSwing`, returning `{ arrow: null, swing: true }`. `swingAngle(id)` sweeps the arms (`BodyMods.swing`) from −1.4 to +0.9 rad around the aim over 14 ticks; `preStep` resolves the hit at tick 7 (`resolveSwing`: nearest live enemy part in reach and arc, `castFixed` for walls). `hit()`: push, `meleeHits++`, break the limb, `melee_hit` event, then `GameWorld.hurt(..., { cause: 'melee' })` or, at `shatterAfter`, `GameWorld.shatter` → `Ragdoll.shatter()` (death cause `shattered`).
+- **Body:** `BodyMods.limpArms` (broken back arm hangs; a broken front arm still works), `dragLeg` also from a broken leg, `fast` (walk ×`runFactor`). Bullet damage ×`bulletShare` for melee players, ×`brokenDamage` with a broken limb (`hurt` too).
+- **The knocked-away gun:** a dynamic box the size it is drawn (`MELEE.gun`), collision groups `DROPPED_GUN_GROUPS` (bit 0 only: lands on walls/floors/crates, never touches a player), skipped by `GameWorld.raycast` (the client preview can't see it), `roomToStand` and `spawnClear`; sent as a `gun` prop (owner slot, angle byte), removed at the owner's respawn or leave (`clearOwner`).
+- **Network (protocol 14):** per player `weapon` (1 byte) and `broken` (16-bit, by `PART_NAMES` index); the dropped gun as a prop (late joiners see both from their first snapshot); `shot` replies to a swing say `swing: true`. Client: `NetClient.fire(..., melee)` keeps swing seqs out of `shotReplies` (`swing_reply`); no stand-in bullet, no locally pointed arm (the swing is the server's).
+- **Client:** `drawMelee` (bat with grip tape / spiked mace in the player's colour) instead of the gun, `drawReach` (a faint fan: reach and arc) instead of the bullet preview, a white crack across a broken elbow/knee, the dropped gun drawn with `drawGun`, HUD lines (weapon, broken limbs), kill feed (`clobbered`, `broke ... into pieces`, `knocked X's gun away`), `CRACK!` on a break. Offline range the same.
+- **Bots** (`BotBrain.brawl`): with a melee weapon, walk at the nearest enemy (going round walls with the same turn logic) and swing within 0.9 × reach.
+- **Found and fixed on the way:** the knocked-away gun landed on a player lying in a corner and kept them down (so it touches no player now); `shots_too_close` didn't know the shorter swing cooldown; a wall pin on a body that fell bent its knee backward (L4 gap): the pin now tears out (`pin_torn`) when a joint next to the pinned part is forced past `PIN.tearOver`.
+- Measured: sim `melee` (bat vs a standing target, 3 lives): 100% hits, ~2.3 s to break a body, run 6.84 vs 5.46 m/s (×1.25), fastest part 16.6 m/s; sim `bots` 2 min: 6-8 crits, disarmed bots swing and land most hits, no stuck bots; netsim `melee`: swings answered as swings, the shatter seen by both players and a late joiner, identical weapon / broken / dropped-gun state at the same ticks (84/84).
+- Tests: `shared/test/l5-melee.test.ts` (air-shot crit, nothing else crits, glove splat, the dropped gun touches no player and bullets pass it, a disarmed click swings and respawn gives the gun back, reach/cooldown/limb break, a miss out of reach, the 3rd hit shatters (death credited, pieces until respawn), faster + tougher, snapshot round trip); L4 pin test (tears out only under strain). Sim `melee` (new), `bots` reports crits and melee. Netsim `melee` (new).
+
+#### L6: Re-check, then arenas ✅
+- **Re-check (same numbers as L4/L5):** run 5.47 m/s, held jump 1.34 m, tapped 0.53 m, stop 0.18 s, get-up 0.7 s; damage stages unchanged (two stumps 0.6× speed, 0.48× jump). Seesaw `shotImpulse` 140 → 110: the gun's faster bullets threw the other end's player 3.61 m; back to the bow's 2.36 m.
+- **What a body can reach** (sim `jump_reach`, best jump timing): climbs 2.0 m running / 1.4 m standing; clears 4.0 m level, 3.5 m onto a ledge 1 m up, 5.0 m to 2 m down; two stumps climb 0.7 m and clear 1.5 m. `REACH` (constants) promises less, what an ordinary jump does: climb 1.4, gap 3.5, gap 1 m up 3.0; two stumps climb 0.6, gap 1.25; a trampoline throws 0.8 × power²/2g; 1.9 m headroom to stand. The sim fails if a measurement ever drops under `REACH`.
+- **Arena reach check** (`shared/src/reach.ts`, `arenaReach(layout, 'whole' | 'stumps')`): pure data like the validator. Places = the free tops of solids (headroom, not in a pit's kill zone, touching tops merged) plus seesaw planks; moves = walking off edges and jumping gaps (longer to lower ground, by jump physics), climbing ledges (no jumping up through a platform), trampolines (to what's beside them). Every place must lead to every other: from the first spawn's place out to all and back. Reports places nobody reaches, **traps** (no way back) and trampolines with something over them lower than the launch. Not modelled: walls in a jump's arc, wind, bouncy floors, tipping, crates. A solid can be marked `decor` (scenery, skipped). `tools/reach-report.ts` prints it per arena and size (also for two stumps, as information); the arena map draws red/orange marks and a verdict line; Vitest checks every arena.
+- **What it found:** Test Lab had two 2 m pockets between the stairs' 4 m back walls and the pit, under the bridges, with no way out but the pit (the top steps now reach the pit edge); Backyard's crate shelf was out of reach (marked `decor`); the Windy Rooftop draft's 2 m huts couldn't be climbed (now 1.3 m, tower decks 1 m higher), and its full size's lower roofs had no way back up (1 m roof vents at their inner edges).
+- **Windy Rooftop** (`arenas/windy-rooftop.ts`, from the draft): 40 m duel (72 m full), roofs at y 15 over a 6 m alley crossed only on the plank (a seesaw), updraft in the alley, wind spilling outward up high, skylights (ice), huts → water tower decks, AC units with crates; 6 spawns in the small size. Palette: night city skyline, neon-teal roof edges.
+- **Construction Site** (`arenas/construction-site.ts`): 64 × 27 m (small: x 12-52), mirrored. Ground with an 8 m pit; mid decks 6 m up (a ground trampoline beside each, or pallet stairs + a board, 1.2 m per step); girders 10.8 m up (a trampoline on the mid deck); crane deck 14.4 m up across the middle (scaffold boards from the girders); a wrecking ball hanging from the crane over the pit; the bubble over the pit, a red apple over the crane deck. 3 m of run-up between the pallets and the pit (a 1 m strip let a bot hang its legs over the pit edge). Palette: building site at night, safety-orange edges.
+- **Found and fixed on the way:** side walls stopped at the arena's top edge, so a Moon Gravity trampoline launch flew a player over one (walls now go up to `ARENA_MARGIN.top`); bots turned back at every pit even with a plank or bridge over it, so they never crossed Windy Rooftop (`avoidPit` now looks down for floor, two looks 0.75 m apart); a wall pin on a body flying past (3.8 m/s off a trampoline) yanked a knee 0.5 rad past its limit in one tick: pins only take hold below `PIN.maxSpeed` 2.5 m/s (`pin_refused`); the kill feed moves under the HUD text when a long help line reaches it; bots jump a step from standing when close (`BOT.standJumpWithin`) instead of backing up for a run-up, which flip-flopped in narrow Test Lab's 2 m wall pockets (48-seed sweep, `tools/bot-seeds.ts`: stuck bots 2 → 1, the last one a body that can't walk off a wall, handed to the ragdoll edge-case work).
+- **The two L5 ragdoll edge cases** (decisions in `modifications.md` L6; physics in section 4: *Root anchor*, *Legs tuck while down*, *Crush spikes*). `tools/bot-seeds.ts` ran the `bots` room over 48 bot seeds (new `RoomOptions.botSeed`): `stage_cant_stand` in 21 fights (the idle person wedged across the narrow Test Lab's 2 m wall-to-step pocket: fixed by tucking the legs while down), `joint_over_limit` / `joint_stretched` in 13 (limbs slammed into ledges/walls/the pit floor: excused as `joint_spike` when they come back; a hooked arm carrying the body stays within 0.06 rad). On the way: a part shot off while lying down snapped the body upright in one tick, and a flying one stopped dead (Rapier resets the joint tree's root): fixed with the root anchor. After: none of those in the same 48 fights; the bot step rule was then changed to jump from standing (BOT.standJumpWithin). A second round on 48 seeds found a body sunk into the thin perch at 26-28 m/s and hung there (fixed: soft CCD, `RAGDOLL.softCcd`) and a false `stage_cant_stand` after a chain of glove stuns (fixed: counted from full balance). Anomaly logs now say what each part touches (`contactInfo`). Tests `shared/test/l6-ragdoll-edges.test.ts`; sims `pocket`, `crush`, `cut_moving` (new).
+- Tests: `shared/test/l6-reach.test.ts` (every arena and size, the rotation, jump reach numbers, a too-high ledge, a too-wide gap / island, a pocket, decor, a seesaw bridge, trampolines beside / under a platform); L4 pin test (no pin on a fast body). Sim: `jump_reach` (new), `arena_fights` (new: a 1 min bot fight in every rotation arena: shots, hits, deaths, ring-outs, no stuck bots), `pit` re-set for the new Test Lab steps. Netsim `arena` now runs every rotation arena (was Test Lab only).
+- Measured (sim `arena_fights`, 3 bots + an idle person, 1 min, small size): Windy Rooftop ~60% of shots hit, 12-15 deaths, ~1 ring-out; Construction Site ~45-50%, 8-9 deaths; Test Lab ~45-55%, 11-17 deaths, 3-8 ring-outs; Backyard ~65-75%. Two stumps can't cross between the halves of any arena but Backyard (the last stage before death; an apple fixes it).
+
+#### L7: Feel pass (in progress)
+- **Step 1, the game-speed dial** (`constants.ts`): `TICK_SECONDS` = real time per tick (1/60 s, used by the room loop, the offline scene's loop and stamina refill, so timers keep real time) and `DT` = game time per tick = `TICK_SECONDS × GAME_SPEED` (a live binding: physics, bullets and pushes read it when they run). `setGameSpeed(speed)` (0.5-1.5, else refused) is called once at start: the server from env `GAME_SPEED` (log `game_speed`), online clients from the welcome's `gameSpeed` (protocol 15; a bad value logs `bad_game_speed`), offline from `?speed=`. Launch configs `server-speed-85`, `server-speed-75`. Tests `shared/test/l7-speed.test.ts` (refuses bad values, same jump height and 1/speed more air ticks, preview = bullet at 0.85, stamina refill in real time); netsim `game_speed` (a 0.85 server: every welcome says so, still-target hits exactly on the preview).
+- **Step 1b, no gun wobble, no hand loss:** removed `swingOffset` / `oneHandOffset` / `swungAim` / `acceptedSwingTick`, `EFFECT.swing*`, `DAMAGE.handAfterHits` / `oneHandReload` / `oneHandWobble`, `BodyDamage.upperHit` / `upperHits` / `oneHanded`, `reloadTicksFor`, `GameWorld.aimFor` / `reloadTicksOf`, `Ragdoll.loseForearm`, the `swing` field of `fire` (an old client's is ignored), the room's swing window (`swing_ok` / `swing_clamped`), the client's `serverTickNow` / `updateReload` / `lastShotTick`, sim `limb_loss` no_hand and `damage_report` one_hand, the netsim `lag` swing/one-handed phases (now: a still shooter's bullets land on its preview under lag). An arm hit keeps only the back arm's windmill while walking. `GameWorld.fire(id, aim)` fires exactly `aim`.
+- **No replays:** the death replay and the best-moment replay are gone (they took over the screen mid-game). Removed: the replay code in `NetScene`, `REPLAY` constants, `NetClient.history`. Kept: `sampleSnapshots` and the best moment's text on the results screen.
+- **Balloon ceiling pop:** a balloon that lifts its player above `SPECIAL.balloon.popBelowTop` (0.5 m from the top) pops with reason `ceiling`; before, a long balloon round could float a player out of the arena (sim `left_arena`). Test in `s7-spice.test.ts`.
+
+### Phase 5: Polish + ship
+Art and sound, mobile controls, Poki/CrazyGames SDK.
+**Download size:** the current build is ~1.66 MB gzipped. Plan: switch to the non-compat Rapier package (WASM as a separate cached file instead of inlined base64, ~25% smaller), and a trimmed custom Phaser build.
+
+---
+
+## 7. Testing and Debugging (always on)
+
+Goal: any problem in the mechanics can be understood **from the log files alone**, without screenshots or video.
+
+### Log files (`logs/`)
+| File | Written by | When |
+|---|---|---|
+| `client-latest.jsonl` | every browser playing (via the Vite dev server); each line has `session` (one page load) and `addr` (which device) | new file each dev-server start |
+| `client-prev.jsonl` | | the dev-server run before that |
+| `sim-latest.jsonl` / `sim-prev.jsonl` | `npm run sim` | each run |
+| `server-latest.jsonl` / `server-prev.jsonl` | the game server (`src` = `server` or `room:<id>`) | each server start |
+| `netsim-latest.jsonl` / `netsim-prev.jsonl` | `npm run netsim` (server + bots, `src` = `bot:<name>`) | each run |
+
+Each line is one JSON event: `{"t": ms, "tick": n, "src": "client", "lvl": "info", "ev": "arrow_hit", ...data}`.
+
+### Events
+| Event | Level | Meaning |
+|---|---|---|
+| `session_start` | info | page loaded (screen size, browser) |
+| `world_reset` | info | level rebuilt (start or R key) |
+| `fire` | info | L3 (was `arrow_fire`): a shot: angle (L7: exactly the aim, no swing); special `kind`; after it `stamina`, `readyIn` (ticks until the next shot) and `armsDown`; what the preview predicted, and `blockedAtArm` (hit something between shoulder and gun hand). Banana pieces: `piece`, `of` |
+| `fire_too_soon` | info | L3: a shot before the reload was done, refused (`ticksLeft`, `sinceLast`) |
+| `fire_queued` | info | L3, server: a shot arrived a few ticks before the reload was done (network jitter) and is held for the reload tick (`earlyBy`) |
+| `reload_done` | info | L3: the gun is ready again (stamina, armsDown) |
+| `swing_ok`, `swing_clamped` | info | removed in L7 (no gun swing any more) |
+| `game_speed`, `bad_game_speed` | info / error | L7: the game speed the server started with (or the offline page) / a welcome with a game speed outside 0.5-1.5 (the client keeps its own) |
+| `shots_too_close` | error | L3: two shots closer than the reload (the reload check is broken; should never happen) |
+| `projectile_after_hit` | error | L3: a bullet still stuck somewhere after its hit (only a bomb or a pulling plunger may stay); removed |
+| `arrow_hit` | info | what the bullet hit, where, flight ticks, push, and **predErr / predTickErr** (preview vs reality) |
+| `arrow_lost` | info | left the arena or timed out |
+| `snapshot` | debug | every 1 s **while something moves**: each ragdoll (torso position/angle, head, grounded, facing, balance, down, limp, speed, gait, every joint angle, hp, stamina, arms down, alive) + other moving bodies + flying arrows |
+| `perf` / `low_fps` | debug / warn | fps and physics steps per second, every 5 s |
+| `long_frame`, `frame_behind` | info / warn | frame took > 250 ms / physics had to skip time |
+| `slow_step` | warn | one world step took > 10 ms (`DEBUG.slowStepMs`; see Server tick cost) |
+| `body_too_fast`, `body_out_of_arena` | warn | something is flying off or exploding |
+| `nan_body`, `nan_arrow` | error | broken numbers in physics |
+| `player_added` | info | a ragdoll spawned (feet position, facing) |
+| `jump`, `jump_blocked` | info | jump started (L2: `coyote` = ticks after leaving the ground, `buffered` = ticks the press waited) / refused (`in_air` (+`buffered`: kept a moment), `cooldown`, `stamina`) |
+| `jump_cut` | info | L2: jump let go early while rising: cut short (ticks after the jump, upward speed then) |
+| `arrow_on_removed_body` | error | a body was removed with an arrow still stuck in it (dropped instead of crashing; should never happen) |
+| `land` | info | back on the ground: air time, how high the torso rose, tilt |
+| `crouch_start`, `crouch_end` | info | crouch key pressed / released |
+| `facing_flip` | info | turned around to face the aim |
+| `trip` | info | leg hit knocked balance out (cause, sweep direction) |
+| `ragdoll_fall`, `ragdoll_up` | info | torso tilted past 1.2 rad / back under 0.3 rad (with how long it was down) |
+| `joint_over_limit` | warn | a joint is past its limit by > 0.5 rad, or > 0.15 rad for 15+ ticks; after a crush/impact only if it isn't back within `LIMIT_CHECK.spikeTicks` (then with `peakOver`, `impact`) |
+| `joint_stretched` | warn | the two halves of a joint are > 5 cm apart for 3+ ticks (body coming apart), with the same crush rule |
+| `air_push_wall` / `air_push_free` | info | L6: in the air, the walk push starts / stops being held back because the torso presses against a wall in the walk direction (`dir`, torso `y`) |
+| `joint_spike` | info | L6: a crushed/hit limb was forced out (past its limit or apart) and came back within `spikeTicks`: `peakOver`, `peakGap`, `ticks`, `impact` (m/s), `touch` |
+| `walk_start`, `walk_stop` | info | walking began (direction, crouching) / ended (distance, ticks, speed) |
+| `damage` | info | who hit whom, body part, damage, health left, arrow speed |
+| `damage_blocked` | info | a hit did no damage: target `dead` or `protected` after respawn |
+| `death` | info | who died, killer (or none), cause (`arrow` / `out_of_arena`), how long ago the last hit was, score |
+| `ragdoll_removed`, `respawn` | info | old body cleared (and any bomb/plunger stuck on it) / back at a spawn point |
+| `stamina_empty`, `stamina_recovered` | info | arms dropped / arms back up |
+| `shot_blocked` | info / warn | shot refused: `arms_down`, `dead`, `match_over`, `laughing`, or `invalid_aim` (warn) |
+| `invalid_controls` | warn | bad input (NaN aim) was refused |
+| `apple_hit`, `apple_spawn` | info | apple shot (by whom, how much gained) / apple (re)appeared |
+| `stats_out_of_range` | error | health or stamina outside 0–100 or not a number |
+| `respawn_blocked` | error | a respawned body started inside something solid |
+| `js_error`, `js_unhandled_rejection`, `console_error` | error | crashes in the browser |
+| `connection_open`, `joined_room`, `connection_closed`, `connection_refused` | info | server: sockets coming and going (refused: join timeout, wrong protocol, binary) |
+| `room_open`, `join`, `leave`, `room_closed` | info | server: room life |
+| `match_start`, `match_end` | info | a match began (arena, size, players, end tick) / ended (reason, winner, scores, length) |
+| `bot_join`, `bot_leave`, `bot_fire`, `bot_turn`, `bot_rest` | info | filler bots: came/left, shot (target, aim error, stamina after), turned at a wall or obstacle, waited for stamina (to jump; `why: shots`: stopped shooting until it's back to `BOT.restUntil`) |
+| `bot_stuck` | warn | a bot that could jump kept trying to walk without getting 1 m anywhere for 5 s (a bot brain bug) |
+| `bot_bad_message`, `slot_changed` | error | a bot sent something the message check refused / a player didn't keep their slot in a new match |
+| `net_match`, `net_arena`, `arena_shown` | info | client: match info / new arena received / new arena now on screen |
+| `effect_start`, `effect_end` | info | a hit effect began (zone, part, the bullet, until, restarted?) / ended (time or death, ticks) |
+| `callout` | info | a banner was picked (kind, victim, by, size, why: distance/zone/pit/misfire) |
+| `stumble` | info | quick catch-steps (`cause`: `tip` = pushed over, `head_stop` = stopped running with a head arrow) (`jump_misfire` was removed with the misfire, L4) |
+| `big_heads` | info | Big Head Mode on/off (head scale, headshot multiplier) |
+| `pickup_spawn`, `pickup_taken`, `held_lost` | info | a bubble appeared / refilled (what it holds) / was shot (by, kind) / a held arrow was lost on death |
+| `special_hit`, `special_contact`, `stun` | info | a special arrow hit (kind, target) / a no-damage special touched a player (counts as the last hit) / balance knocked out (cause, ticks) |
+| `balloon_start`, `balloon_pop`, `balloon_end` | info | a balloon was tied (part) / popped (shot, death; L7: `ceiling` when it floats above `SPECIAL.balloon.popBelowTop`, so nobody is carried out of the arena) / ended |
+| `oil_spawn`, `oil_end`, `oil_scramble`, `oil_slide`, `oil_lost` | info | a puddle appeared (where, width, until) / dried / legs scrambling / belly slide / no floor under the hit |
+| `rope_start`, `rope_end` | info | plunger rope (shooter, victim, until) |
+| `bomb_stuck`, `bomb_explode` | info | sticky bomb stuck (on what, fuse) / went off (players hit) |
+| `banana_split`, `swap`, `swap_blocked`, `relocate` | info | banana split into 3 / two players traded places (or no room) |
+| `pin_start`, `pin_mash`, `pin_end` | info | a limb nailed to a wall (part, wall, until) / a jump press shortened it / freed (time, death, removed) |
+| `wall_splat` | info | a body hit a wall fast (speed before/after, wall) |
+| `hazards_built` | info | the arena's hazards were built (count, kinds) |
+| `hazard_hit` | info | a trampoline launch / a wrecking ball knocking someone (kind, label, player, speed, credited to) |
+| `hazard_shot` | info | an arrow swung a wrecking ball / kicked a seesaw end (by whom) |
+| `stuck_in_hazard` | warn | a player's body center inside a seesaw plank or wrecking ball for 30+ ticks (physics let it through) |
+| `effect_on_dead`, `effect_too_long` | error | an effect on a dead player / an effect past its length (should never happen) |
+| `room_stats` | info | server, every 5 s: players, arrows, average and worst tick time (`stepAvgMs`, `stepWorstMs`), and the average split into `botsMs` (bot brains), `worldMs` (world step) and `netMs` (events, snapshots, sends) |
+| `net_stats` | info | server: KB/s sent, messages/s received, dropped, snapshots skipped per player. Client: ping, snapshots/s, smoothing underruns, worst gap, KB/s in/out |
+| `net_poor` | warn | client: under 15 snapshots/s or a gap over 250 ms |
+| `bad_message`, `rate_limited` | warn | server: malformed / too many client messages (with how many repeats were not logged) |
+| `backpressure`, `server_behind` | warn | server: a slow client's snapshots skipped / the room loop fell behind real time |
+| `spawn_crowded` | warn | no clear spawn point; used the farthest one |
+| `shot_sent`, `shot_reply`, `shot_refused`, `placeholder_handover`, `placeholder_landed`, `placeholder_timeout` | info / warn | client: your shot (`swing` = the server tick its preview showed, `newest` snapshot tick), its round trip (ms), how far the stand-in bullet was from the real one / that it landed before the real one was ever seen (a short shot) |
+| `placeholder_gone` | info | client (L3): the real bullet of your shot was already gone in a snapshot sent after the shot (it hit something the stand-in flew past); the stand-in is dropped |
+| `camera_setup` | info | client: arena size, follow or fixed, `zoom` and the view in meters (L3: ~36 m wide, never more than the arena), `lean` toward the pointer |
+| `net_connecting`, `net_welcome`, `net_roster`, `net_closed`, `join_failed` | info / warn | client: connection life (`net_connecting` and `join_failed` include which room was asked for) |
+| `rooms_unreachable` | warn | client: the join screen couldn't load the room list |
+| `joined_room` | info | server: which device (`addr`) joined which room, and what it asked for (`quick`, `new`, or a room id) |
+| `aim_blocked`, `aim_clear` | info | aiming into something within arm's reach (and what), so the gun arm lowers / aim is free again |
+| `server_warmup_slow` | info | server: a new room's first second ran slow while the code warmed up (not a problem) |
+| `crown_change` | info | the crown moved (from, to, why: `leader`, `took it` = killed the holder, `too few players`) |
+| `modifier_announce`, `modifier_start`, `modifier_end` | info | a chaos round was announced (kind, start, end) / switched on / off (with the world's gravity share, forced arrow, oil, head scale, so a stuck one shows) |
+| `modifier_stuck` | error | a chaos round is still on after its end (should never happen) |
+| `modifier_shown` | info | client: the round as the screen shows it (`kind:announced/on`, the preview's extra gravity) |
+| `replay_start`, `replay_end`, `replay_skipped`, `replay_gaps` | info / warn | removed in L7 (no replays). Was: client: a replay began (why, ticks, trimmed, speed, frames) / ended (done, respawned, new match) / not shown (no time, not enough saved frames) / saved snapshots missing in its window |
+| `hat_off`, `hat_unlocked` | info | client: a headshot knocked a hat off / your progress unlocked a hat |
+| `part_lost` | info | a body part was shot off (L0): which part, the stump left, legs left, the body's new mass |
+| `damage_stage` | info | L4: a damage ladder moved: `area` legs (`stage` 1-4, `name`, `hits`, `did` trip/drag/stump, `leg`) or hand (shot off), with the hit that did it |
+| `drag_start`, `drag_end` | info | L4: a leg starts / stops dragging (the limp) |
+| `dent` | info | L4: a glove dented a part (who, part, by) |
+| `body_repaired`, `repair_waiting`, `repair_given_up`, `body_reapplied` | info | L4: the body was put back together (`by: apple` / `respawn`, what it had) / an apple's repair waits for room to stand / gave up / a rebuilt body (swap) got its damage back |
+| `stage_skipped`, `stage_backwards`, `body_state_mismatch`, `piece_left_behind` | error | L4: the leg ladder jumped / went back / the rules and the body disagree / a shot-off piece survived a respawn (should never happen) |
+| `stage_cant_stand` | warn | L4: a damaged body has been down 5 s with full balance (it can't get up in that stage). L6: counted from when its balance came back (`Ragdoll.stuckTicks`), not from the fall: six glove stuns in a row kept a body down 400 ticks without a chance; carries `stuckTicks`, `downTicks`, `contactInfo` |
+| `crit` | info | L5: a critical hit knocked `who`'s gun away (`by`, `trigger` air_shot / glove_splat, `weapon`, the dice `roll` or `afterTicks`) |
+| `gun_dropped` | info | L5: the gun left the hand (where) |
+| `melee_swing`, `melee_miss` | info | L5: a swing started (`weapon`, `angleDeg`, `facing`) / hit nothing at its hit tick |
+| `melee_hit` | info | L5: `who` hit `victim` (`part`, `zone`, `broke`, `meleeHits`, `d` = distance from the shoulder) |
+| `body_broken`, `body_shattered` | info | L5: the 3rd melee hit (world: who, by) / the body cut into pieces (ragdoll: pieces) |
+| `bot_swing` | info | L5: a melee bot swung (target, distance) |
+| `pin_torn` | info | L5: a wall pin tore out because it forced a joint past its limit (part, strain) |
+| `pin_refused` | info | L6: no wall pin: the body was moving faster than `PIN.maxSpeed` (part, speed) |
+| `swing_reply`, `swing_reply_odd` | info / warn | client: the server's answer to a swing / a bullet came back for a swing (client and server disagree on the weapon) |
+| `melee_too_far`, `gun_while_melee` | error | L5: a swing hit beyond its reach / a bullet was fired by a melee player (should never happen) |
+| `backdrop_built` / `slow_backdrop` | info / warn | client (L1): an arena's backdrop was drawn (layers, shapes, glows, textures reused, `first` on this page, ms) / it took longer than 150 ms (first on the page) or 40 ms (later) |
+| `callout_shown`, `callout_dropped` | info | client (L1): a callout was shown (`tag` or `banner`, victim, banners waiting) / a banner was dropped because 2 were already waiting |
+| `fx_capped` | warn | client (L1): more than 160 particles at once; the oldest were dropped (how many since the last warning) |
+
+Repeated warnings are limited to once per second per thing, so logs don't flood; the next logged one says how many were skipped (`repeatsNotLogged`). `joint_over_limit` also carries the player's controls, facing, speed and balance. L6: `joint_over_limit`, `joint_stretched` and `stage_cant_stand` also carry `Ragdoll.contactInfo()`: what each part touches (`touch`), torso tilt, position and speed, and both shoulder angles.
+
+### Commands
+```
+npx tsx tools/reach-report.ts              L6: the reach check for every arena (and drafts given as arguments)
+npx tsx tools/arena-map.ts                 labeled map of every arena (with the reach check) -> arena-maps.html
+npx tsx tools/arena-map.ts tools/arena-drafts/<name>.ts
+                                           a draft arena (not in the game yet): both sizes + validator -> arena-drafts.html
+npm test          physics/mechanics tests (must pass before calling anything done)
+npm run sim       scripted scenarios with no browser; prints a summary, exits 1 on problems
+npm run sim -- stand jump   only the named scenarios
+npm run netsim    real server + bot players over real sockets; exits 1 on problems
+npm run netsim -- basic lag   only the named scenarios
+npm run typecheck
+npx tsx tools/bot-seeds.ts [from] [to]
+                  L6: the `bots` sim room over many bot seeds (RoomOptions.botSeed; same seed = same fight), 2 min
+                  each, prints every warning -> logs/botseeds-latest.jsonl. Rare physics problems need many fights.
+npx tsx tools/tick-probe.ts [hot|timer] [test_lab|backyard] [log|bglog]
+                  server tick cost, back-to-back (hot) vs paced at 60 Hz like the live server (timer)
+npm run dev       game server + web page; prints the address other devices on the network open
+                  (http://<this computer's network address>:5173; this computer can also use http://localhost:5173)
+                  logs: logs/server-latest.jsonl and logs/client-latest.jsonl (all browsers, tagged by session/addr)
+                  ?mode=local = offline test range, ?lag=120&jitter=40 = fake bad connection
+```
+
+### Rules for every new mechanic
+1. Log its key moments (start, result, failure) with the numbers needed to explain them.
+2. Add anomaly checks for how it can break (e.g. a joint past its limit).
+3. Add a test, and a `sim` scenario if it's about feel or tuning.
+
+### In game
+F2 (debug) shows the physics outlines instead of the skin and backdrop: collider outlines (grey = fixed, green = moving, dimmed = asleep, blue = you, orange = other players, red/gold = apples; a white tick on the head shows facing). Bars over each head: health and stamina. Debug HUD shows each player's state (up/down/DEAD with respawn countdown), hp, stamina, arms down, on ground, speed, balance and facing. Online, name tags show over each player and the HUD has room, ping and score; the debug line shows the smoothing buffer (render tick, newest snapshot, buffered, underruns, worst gap). **F2** toggles extra overlays (full predicted path, predicted hit marker, tick/arrow counts). **R** resets the level (offline only). In dev builds the scene is available as `window.scene` for inspection.

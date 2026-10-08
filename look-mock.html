@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Neon Look Mock</title>
+<style>
+  html, body { margin: 0; background: #05060a; }
+  canvas { display: block; width: 100vw; height: auto; max-width: 1280px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// A still mock-up of the proposed global look (not game code): dark, quiet world; flat bright players (the game's colours); glowing bullets;
+// a subtle aim line; "YOU" only on you; everyone else in the side legend.
+const c = document.getElementById('c');
+const g = c.getContext('2d');
+const W = 1280, H = 720;
+
+// ---- the world: dark and dull, so everything that matters pops ----
+const sky = g.createLinearGradient(0, 0, 0, H);
+sky.addColorStop(0, '#06070d');
+sky.addColorStop(1, '#11132a');
+g.fillStyle = sky; g.fillRect(0, 0, W, H);
+// far city silhouettes (two dim layers)
+function skyline(color, base, seed, hMin, hMax, wMin, wMax) {
+  g.fillStyle = color; let x = -20, s = seed;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  while (x < W) { const w = wMin + rnd() * (wMax - wMin); const h = hMin + rnd() * (hMax - hMin); g.fillRect(x, base - h, w, h + 400); x += w + 4; }
+}
+skyline('#15182c', 470, 7, 80, 260, 40, 110);
+skyline('#0e1020', 520, 11, 40, 160, 60, 140);
+// one soft glow far away (mood, never a bright spot)
+const glow = g.createRadialGradient(1010, 150, 0, 1010, 150, 220);
+glow.addColorStop(0, 'rgba(120,90,255,0.10)'); glow.addColorStop(1, 'rgba(120,90,255,0)');
+g.fillStyle = glow; g.fillRect(0, 0, W, H);
+
+// terrain: near-black solids with ONE thin accent edge (the same rule in every arena; only the accent hue changes)
+const ACCENT = '#2de2c6';
+function solid(x, y, w, h) {
+  g.fillStyle = '#070810'; g.fillRect(x, y, w, h);
+  g.fillStyle = ACCENT; g.globalAlpha = 0.55; g.fillRect(x, y, w, 2); g.globalAlpha = 1;
+}
+solid(0, 600, 470, 120); solid(640, 600, 640, 120); // ground with a pit
+solid(170, 440, 220, 18); solid(860, 400, 240, 18); // platforms
+solid(560, 520, 70, 80); // a crate-like block
+// the pit: darker, with a faint warning line
+g.fillStyle = '#030306'; g.fillRect(470, 600, 170, 120);
+
+// ---- stick figures: the game's current look - flat bright colour, no glow, no outline; back limbs a bit darker ----
+function shade(hex, k) { const n = parseInt(hex.slice(1), 16); const f = (v) => Math.round(v * k); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; }
+function line(w, color) { g.lineWidth = w; g.strokeStyle = color; g.lineCap = 'round'; g.lineJoin = 'round'; g.shadowBlur = 0; }
+function stick(x, y, color, facing, pose = 0) {
+  line(9, shade(color, 0.7)); g.beginPath();
+  g.moveTo(x, y - 18); g.lineTo(x - 12 * facing - pose * 6, y + 4); g.lineTo(x - 16 * facing - pose * 4, y + 30); // back leg
+  g.moveTo(x, y - 54); g.lineTo(x - 14 * facing, y - 34); g.lineTo(x - 6 * facing, y - 20);                    // back arm
+  g.stroke();
+  line(11, color); g.beginPath();
+  g.moveTo(x, y - 62); g.lineTo(x, y - 18);                                                                       // torso
+  g.moveTo(x, y - 18); g.lineTo(x + 10 * facing + pose * 6, y + 4); g.lineTo(x + 6 * facing + pose * 8, y + 30); // front leg
+  g.stroke();
+  g.fillStyle = color; g.beginPath(); g.arc(x, y - 80, 15, 0, Math.PI * 2); g.fill();                         // head
+}
+// the gun: a clear silhouette pointing where you aim (front arm in your colour, light metal gun)
+function gun(x, y, angle, color) {
+  g.save(); g.translate(x, y); g.rotate(angle);
+  line(10, color); g.beginPath(); g.moveTo(0, 0); g.lineTo(24, 0); g.stroke(); // front arm
+  g.fillStyle = '#c9cfdc'; g.fillRect(20, -6, 40, 10);  // body
+  g.fillStyle = '#c9cfdc'; g.fillRect(28, 4, 7, 10);    // grip
+  g.restore();
+}
+
+const YOU = { x: 300, y: 410, color: '#00e5ff' };
+const players = [
+  YOU,
+  { x: 960, y: 370, color: '#ff2bd6', facing: -1 },
+  { x: 760, y: 570, color: '#76ff03', facing: -1, pose: 1 },
+  { x: 1150, y: 570, color: '#ffea00', facing: -1 },
+];
+for (const p of players) stick(p.x, p.y, p.color, p.facing ?? 1, p.pose ?? 0);
+const aimAngle = -0.18;
+gun(YOU.x, YOU.y - 52, aimAngle, YOU.color);
+gun(960, 318, Math.PI + 0.12, '#ff2bd6');
+gun(760, 518, Math.PI - 0.25, '#76ff03');
+gun(1150, 518, Math.PI + 0.05, '#ffea00');
+
+// ---- the aim line: subtle, short (the first 0.5 s), in your colour, fading out ----
+{
+  const mx = YOU.x + Math.cos(aimAngle) * 64, my = YOU.y - 52 + Math.sin(aimAngle) * 64;
+  for (let i = 1; i <= 9; i++) {
+    const t = i * 22;
+    const px = mx + Math.cos(aimAngle) * t, py = my + Math.sin(aimAngle) * t + 0.0009 * t * t;
+    g.fillStyle = YOU.color; g.globalAlpha = 0.45 * (1 - i / 10); g.beginPath(); g.arc(px, py, 2.2, 0, Math.PI * 2); g.fill();
+  }
+  g.globalAlpha = 1;
+}
+
+// ---- bullets: a white-hot core with a short trail in the shooter's colour ----
+function bullet(x, y, angle, color, len) {
+  const tx = x - Math.cos(angle) * len, ty = y - Math.sin(angle) * len;
+  const trail = g.createLinearGradient(tx, ty, x, y);
+  trail.addColorStop(0, 'rgba(0,0,0,0)'); trail.addColorStop(1, color);
+  g.strokeStyle = trail; g.lineWidth = 4; g.shadowColor = color; g.shadowBlur = 16; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(tx, ty); g.lineTo(x, y); g.stroke();
+  g.fillStyle = '#ffffff'; g.shadowBlur = 18; g.beginPath(); g.arc(x, y, 3.6, 0, Math.PI * 2); g.fill();
+  g.shadowBlur = 0;
+}
+bullet(640, 330, Math.PI + 0.1, '#ff2bd6', 110);
+bullet(520, 470, -0.12, '#00e5ff', 90);
+bullet(980, 520, Math.PI - 0.3, '#ffea00', 80);
+
+// ---- thin health bars over everyone; "YOU" only over you ----
+function bar(x, y, hp, color) {
+  g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x - 20, y, 40, 4);
+  g.fillStyle = color; g.fillRect(x - 20, y, 40 * hp, 4);
+}
+bar(YOU.x, YOU.y - 104, 0.8, YOU.color); bar(960, 266, 0.45, '#ff2bd6'); bar(760, 466, 1, '#76ff03'); bar(1150, 466, 0.7, '#ffea00');
+g.font = '700 15px system-ui, sans-serif'; g.textAlign = 'center';
+g.fillStyle = '#ffffff'; g.shadowColor = YOU.color; g.shadowBlur = 10; g.fillText('YOU', YOU.x, YOU.y - 116); g.shadowBlur = 0;
+g.fillStyle = YOU.color; g.beginPath(); g.moveTo(YOU.x - 6, YOU.y - 111); g.lineTo(YOU.x + 6, YOU.y - 111); g.lineTo(YOU.x, YOU.y - 105); g.fill();
+
+// ---- the legend: everyone's colour, name, score (top left), you marked ----
+const legend = [['tester', '#00e5ff', 4, true], ['Wobbles', '#ff2bd6', 6, false], ['Noodle', '#76ff03', 2, false], ['Bonk', '#ffea00', 3, false]];
+g.fillStyle = 'rgba(10,12,22,0.72)'; g.fillRect(16, 16, 196, 30 + legend.length * 26);
+g.textAlign = 'left'; g.font = '600 12px system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillText('PLAYERS', 28, 36);
+legend.forEach(([name, color, score, me], i) => {
+  const y = 60 + i * 26;
+  g.fillStyle = color; g.shadowColor = color; g.shadowBlur = 8; g.beginPath(); g.arc(34, y - 4, 6, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
+  g.fillStyle = me ? '#ffffff' : 'rgba(255,255,255,0.8)'; g.font = (me ? '700 ' : '500 ') + '14px system-ui, sans-serif';
+  g.fillText(name + (me ? '  (you)' : ''), 48, y);
+  g.textAlign = 'right'; g.fillText(String(score), 200, y); g.textAlign = 'left';
+});
+// match line (top centre), small and quiet
+g.textAlign = 'center'; g.font = '500 14px system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.6)';
+g.fillText('2:14   ·   first to 15', W / 2, 32);
+
+// ---- the cursor: a small ring with the reload arc ----
+const cx = 760, cy = 300;
+g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, 11, 0, Math.PI * 2); g.stroke();
+g.strokeStyle = YOU.color; g.lineWidth = 2.5; g.beginPath(); g.arc(cx, cy, 11, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * 0.7); g.stroke();
+g.fillStyle = '#ffffff'; g.beginPath(); g.arc(cx, cy, 1.8, 0, Math.PI * 2); g.fill();
+</script>
+</body>
+</html>

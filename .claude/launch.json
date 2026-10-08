@@ -1,0 +1,59 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:server"
+      ],
+      "port": 2567
+    },
+    {
+      "name": "client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:client"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "server-short",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:server"
+      ],
+      "port": 2567,
+      "env": {
+        "MATCH_SECONDS": "25"
+      }
+    },
+    {
+      "name": "server-speed-85",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:server"
+      ],
+      "port": 2567,
+      "env": {
+        "GAME_SPEED": "0.85"
+      }
+    },
+    {
+      "name": "server-speed-75",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:server"
+      ],
+      "port": 2567,
+      "env": {
+        "GAME_SPEED": "0.75"
+      }
+    }
+  ]
+}
