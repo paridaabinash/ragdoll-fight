@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier2d-compat';
 import { isValidAim, launchVelocity, type Aim } from './aim';
 import type { ArenaBounds, ArenaLayout } from './arena';
-import { APPLE, ARROW, BIG_HEAD, CROWN, DAMAGE, DEBUG, MELEE, PIN, DEFAULT_BOUNDS, DT, GRAVITY_Y, GUN, HAZARD, HEALTH, MODIFIER, STREAK, RESPAWN, SOLVER_INTERNAL_ITERATIONS, SOLVER_ITERATIONS, SPECIAL, STAMINA } from './constants';
+import { APPLE, ARROW, BIG_HEAD, CROWN, DAMAGE, DEBUG, HIT_REACTION, LIMB, MELEE, PIN, DEFAULT_BOUNDS, DT, GRAVITY_Y, GUN, HAZARD, HEALTH, MODIFIER, STREAK, RESPAWN, SOLVER_INTERNAL_ITERATIONS, SOLVER_ITERATIONS, SPECIAL, STAMINA } from './constants';
 import type { Logger } from './log';
 import { add, dist, isFiniteVec, length, r2, r3, rotate, rv, scale, sub, vec, type Vec2 } from './math';
 import { outOfArena, stepArrow, traceShot, traceSplitShot } from './projectile';
@@ -13,6 +13,7 @@ import { brokenSides, Melee } from './melee';
 import { EXCITEMENT, newTally, pickAwards, type Award, type BestMoment, type ModifierKind, type Tally } from './spice';
 import type { Surface } from './arena';
 import { BodyDamage, damageFor, killCredit, LEG_STAGE_NAMES, PlayerStats, type Weapon } from './rules';
+import type { ModeRules, Team } from './modes';
 
 /** Must be awaited once before creating a GameWorld (loads the physics WASM). */
 export const initPhysics = (): Promise<void> => RAPIER.init();
@@ -98,7 +99,9 @@ export type GameEvent =
    * L3: a bullet hit something that isn't a player (a player hit is a `damage` event): clients draw a bullet hole on
    * fixed things (walls, floors) and a dust puff. `angle`: the way it was flying. Also sent where a pinned limb is nailed.
    */
-  | { type: 'impact'; pos: Vec2; angle: number; on: 'wall' | 'object' }
+  | { type: 'impact'; pos: Vec2; angle: number; on: 'wall' | 'object' | 'shield' }
+  /** L7: a shot-off piece hit the ground (dust and a thud on screens); `size` grows with how fast it fell. */
+  | { type: 'thud'; pos: Vec2; size: number }
   // S5
   /** A power-up bubble was shot: `by` holds that special arrow now. */
   | { type: 'pickup'; label: string; kind: SpecialKind; by: string; pos: Vec2 }
@@ -124,7 +127,7 @@ export type GameEvent =
 export type DeathCause = 'arrow' | 'out_of_arena' | 'pit' | 'melee' | 'shattered';
 
 /** L3: why a shot was refused (also the `shot` reply's reason online). */
-export type FireRefusal = 'invalid_aim' | 'dead' | 'match_over' | 'arms_down' | 'laughing' | 'fire_too_soon';
+export type FireRefusal = 'invalid_aim' | 'dead' | 'match_over' | 'arms_down' | 'laughing' | 'fire_too_soon' | 'drawing_weapon';
 /** A shot: the bullet, or why there is none. */
 export type FireResult = { arrow: Arrow; refused?: undefined; swing?: undefined } | { arrow: null; refused: FireRefusal; swing?: undefined } | { arrow: null; swing: true; refused?: undefined };
 
@@ -177,6 +180,21 @@ export class GameWorld implements RagdollHost {
   frozen = false;
   /** Bounty crown holder (S7), or null (off below CROWN.minPlayers players). */
   crown: string | null = null;
+  /**
+   * M3: the game mode's rules for this world (set by `Match` before players join). `crownRule`: bounty (S7), keeper
+   * (Crown Keeper: points while held) or off. `respawns`: false in Last Standing (rounds bring everyone back).
+   * `startWeapon`: melee = everyone has a bat or mace from the start (Melee Mayhem). `teams`: player -> team (Team
+   * Battle; empty = no teams): teammates can't hurt each other, and kills add to `teamScores`.
+   */
+  crownRule: ModeRules['crown'] = 'bounty';
+  respawns = true;
+  /** A kill scores (false in Crown Keeper and Last Standing: the score counts crown seconds / round wins). */
+  killsScore = true;
+  startWeapon: ModeRules['weapon'] = 'gun';
+  readonly teams = new Map<string, Team>();
+  teamScores: [number, number] = [0, 0];
+  /** Crown Keeper: ticks the current holder has held it since their last point. */
+  private keeperTicks = 0;
   /** Per player, this match: what the awards are made of (S7). */
   readonly tally = new Map<string, Tally>();
   /** The most exciting moment so far (replayed on the results screen). */
@@ -208,6 +226,10 @@ export class GameWorld implements RagdollHost {
   private readonly jumpWas = new Map<string, boolean>();
   /** What each player asked for; the rules filter it before the ragdoll sees it. */
   private readonly wanted = new Map<string, Controls>();
+  /** L7: shot-off pieces in their first seconds, watched for the moment they land (a `thud`). */
+  private flyingPieces: { body: RAPIER.RigidBody; label: string; since: number; falling: number }[] = [];
+  /** L7: tick each player's flinch after a bullet hit ends (weak walk / air control until then). */
+  private readonly flinchUntil = new Map<string, number>();
   /** Each player's hit effects (S3). */
   readonly effects = new Map<string, EffectSet>();
   /** L4: each player's lasting body damage this life (leg ladder, hand, dents, holes). */
@@ -259,6 +281,10 @@ export class GameWorld implements RagdollHost {
   hurt(id: string, by: string, amount: number, pos: Vec2, how: { zone: Zone; part: string; cause: DeathCause } = { zone: 'torso', part: 'blast', cause: 'arrow' }): void {
     const st = this.stats.get(id);
     if (!st || amount <= 0 || this.frozen) return;
+    if (this.sameTeam(id, by)) {
+      this.log.info('damage_blocked', { id, by, zone: how.zone, reason: 'teammate', cause: how.cause });
+      return;
+    }
     const done = st.takeDamage(Math.round(amount * this.brokenFactor(id)), by, this.tick);
     if (done <= 0) return;
     this.log.info('damage', { id, by, zone: how.zone, part: how.part, amount: r2(done), hp: r2(st.health), speed: 0 });
@@ -331,6 +357,7 @@ export class GameWorld implements RagdollHost {
 
   /** A body part was shot off: from now on it's a loose piece, not the player (hits on it hurt nobody). */
   releasePart(collider: RAPIER.Collider, body: RAPIER.RigidBody, label: string): void {
+    this.flyingPieces.push({ body, label, since: this.tick, falling: 0 });
     this.colliderOwners.delete(collider.handle);
     this.ownedBodies.delete(body.handle);
     this.colliderLabels.set(collider.handle, label);
@@ -380,7 +407,25 @@ export class GameWorld implements RagdollHost {
     const ragdoll = this.addPlayer(id, { x: spot.x, y: spot.y - RESPAWN.lift }, spot.facing, slot);
     this.playerStats(id).revive(this.tick);
     this.checkSpawnClear(ragdoll);
+    if (this.startWeapon === 'melee') this.melee.arm(id);
     return ragdoll;
+  }
+
+  /** M3 Team Battle: are these two different players on the same team? (Yourself is not a teammate: a self-own still hurts.) */
+  sameTeam(a: string | null | undefined, b: string | null | undefined): boolean {
+    if (!a || !b || a === b) return false;
+    const t = this.teams.get(a);
+    return t !== undefined && t === this.teams.get(b);
+  }
+
+  /**
+   * M3 Last Standing: a new round. Everyone (dead or alive) gets a fresh body at a spawn point, full health and the
+   * spawn shield; bullets in the air go.
+   */
+  respawnAll(): void {
+    for (const a of this.arrows) if (a.state === 'flying') a.state = 'gone';
+    this.arrows = this.arrows.filter((a) => a.state !== 'gone');
+    for (const id of [...this.players.keys()]) this.respawn(id);
   }
 
   /** Removes a player completely (left the game). Their arrows already in the air keep flying. */
@@ -397,6 +442,7 @@ export class GameWorld implements RagdollHost {
     this.pendingRepair.delete(id);
     this.slots.delete(id);
     this.tally.delete(id);
+    this.teams.delete(id);
     if (this.crown === id) this.crown = null; // (given to the new leader on the next tick)
     this.log.info('player_removed', { id });
   }
@@ -455,10 +501,6 @@ export class GameWorld implements RagdollHost {
     const out = this.events;
     this.events = [];
     return out;
-  }
-
-  spendStamina(id: string, amount: number): boolean {
-    return this.stats.get(id)?.trySpend(amount, this.tick) ?? true;
   }
 
   player(id: string): Ragdoll {
@@ -587,8 +629,16 @@ export class GameWorld implements RagdollHost {
       // (L5: a melee swing has its own, shorter cooldown)
       const minGap = this.damage.get(ownerId)?.weapon !== 'gun' && this.damage.has(ownerId) ? MELEE.cooldownTicks : GUN.reloadTicks;
       if (this.tick - st.lastShotTick < minGap) this.anomaly('shots_too_close', ownerId, { ticks: this.tick - st.lastShotTick, reload: minGap }, 'error');
+      // L7: shooting or swinging ends your spawn shield at once
+      const shieldLeft = st.endProtection(this.tick);
+      if (shieldLeft > 0) this.log.info('shield_end', { id: ownerId, why: 'shot', leftTicks: shieldLeft });
       // L5: with the gun knocked away, the click swings the melee weapon instead (same checks, its own cooldown)
       if (this.damage.get(ownerId)?.weapon !== 'gun' && this.damage.has(ownerId)) {
+        // L7: right after the disarm the hands are empty for a moment (the weapon is being drawn)
+        if (this.melee.drawing(ownerId)) {
+          this.log.info('shot_blocked', { owner: ownerId, reason: 'drawing_weapon', ticksLeft: this.melee.drawLeft(ownerId) });
+          return { arrow: null, refused: 'drawing_weapon' };
+        }
         st.shoot(this.tick, MELEE.cooldownTicks, MELEE.stamina);
         this.melee.startSwing(ownerId, aim);
         return { arrow: null, swing: true };
@@ -665,6 +715,13 @@ export class GameWorld implements RagdollHost {
     this.updateArrows();
     for (const p of this.players.values()) p.postPhysics(this.tick);
     this.specials.postStep();
+    this.checkThuds();
+    // L7: time alive on a stump (the Flesh Wound award)
+    for (const [id, p] of this.players) {
+      if (p.stumps.size === 0 || !this.stats.get(id)?.alive) continue;
+      const t = this.tally.get(id);
+      if (t) t.stumpTicks++;
+    }
     this.checkOut();
     this.checkAnomalies();
     const ms = performance.now() - started;
@@ -726,9 +783,10 @@ export class GameWorld implements RagdollHost {
   private applyRules(): void {
     for (const id of [...this.players.keys()]) {
       const st = this.stats.get(id)!;
-      if (st.respawnDue(this.tick)) this.respawn(id);
+      if (this.respawns && st.respawnDue(this.tick)) this.respawn(id);
       const want = this.wanted.get(id) ?? NO_CONTROLS;
       st.updateStamina(this.tick);
+      if (st.alive && st.protectedUntil === this.tick) this.log.info('shield_end', { id, why: 'time' });
       const p = this.player(id);
       if (!st.alive || this.frozen) p.controls = NO_CONTROLS;
       // (arms down: the body lowers them, see BodyMods.armsDown)
@@ -757,6 +815,7 @@ export class GameWorld implements RagdollHost {
             oiled: this.specials.isOiled(id),
             laughing: fx.has('laugh'),
             floatLeg: floatLegOf(fx.get('balloon')?.part),
+            floating: fx.get('balloon')?.part === 'torso' || fx.get('balloon')?.part === 'head',
             beltSpeed: this.hazards.beltUnder(id),
             pinned: fx.has('pinned'),
             // Out of stamina (L3: shots spend it), or laughing too hard (feather): the arms drop.
@@ -766,11 +825,34 @@ export class GameWorld implements RagdollHost {
             swing: this.melee.swingAngle(id),
             limpArms: brokenSides(this.damage.get(id)?.broken ?? new Set()).arms.filter((s) => s === 'back'),
             fast: (this.damage.get(id)?.weapon ?? 'gun') !== 'gun',
+            flinch: this.tick < (this.flinchUntil.get(id) ?? -Infinity),
+            // (L7: after a melee swing the weapon arm is let go, damped: the weapon swings on and settles)
+            swingSettle: this.melee.settling(id),
           };
       if (this.allOiled && st.alive) p.mods = { ...p.mods, oiled: true };
     }
     this.updateEffects();
     this.retryRepairs();
+  }
+
+  /**
+   * L7: a shot-off piece that was falling fast and has stopped falling just landed: a `thud` (dust on screens). Pieces
+   * are watched for 3 s after they come off (one thud each); a piece whose body is gone (respawn) is dropped.
+   */
+  private checkThuds(): void {
+    this.flyingPieces = this.flyingPieces.filter((f) => {
+      if (this.tick - f.since > 180 || !this.physics.getRigidBody(f.body.handle)) return false;
+      const vy = f.body.linvel().y;
+      if (vy > LIMB.thudFall) f.falling = Math.max(f.falling, vy);
+      else if (f.falling > 0 && Math.abs(vy) < 1) {
+        const pos = { ...f.body.translation() };
+        const size = r2(Math.min(1.5, f.falling / 6));
+        this.events.push({ type: 'thud', pos, size });
+        this.log.info('piece_thud', { piece: f.label, at: rv(pos), fell: r2(f.falling), afterTicks: this.tick - f.since });
+        return false;
+      }
+      return true;
+    });
   }
 
   /** Effects that ran out end (L3: there are no stuck bullets to drop any more). */
@@ -850,7 +932,26 @@ export class GameWorld implements RagdollHost {
    * ladder any more). Called by the hit handling; public for tests and tools.
    * `dirX`: which way the hit pushed (a trip sweeps the feet that way).
    */
-  bodyHit(id: string, part: PartName, dirX: number, cause: string): void {
+  /**
+   * L7: a bullet hit you feel. The whole body is knocked along the bullet (sideways: a downward shot doesn't slam you
+   * into the floor), plus a kick by zone (head snaps back + torso pitches back; legs swept, the body pitches forward),
+   * then a short flinch (weak walk and air control). Numbers in HIT_REACTION.
+   */
+  hitReaction(id: string, zone: Zone, bulletVel: Vec2): void {
+    const p = this.players.get(id);
+    if (!p || !this.stats.get(id)?.alive) return;
+    const dir = Math.sign(bulletVel.x) || 1;
+    const R = HIT_REACTION;
+    const vxBefore = p.speedX();
+    for (const b of p.attached()) this.push(b, { x: dir * R.knock[zone] * b.mass(), y: 0 });
+    if (zone === 'head') this.push(p.parts.head, { x: dir * R.headSnap * p.parts.head.mass(), y: 0 });
+    if (zone === 'leg') for (const n of ['legFrontUpper', 'legFrontLower', 'legBackUpper', 'legBackLower'] as const) if (!p.lost.has(n)) this.push(p.parts[n], { x: dir * R.legSweep * p.parts[n].mass(), y: 0 });
+    if (R.pitch[zone]) this.twist(p.parts.torso, dir * R.pitch[zone] * p.parts.torso.principalInertia());
+    this.flinchUntil.set(id, this.tick + R.flinchTicks);
+    this.log.info('hit_knock', { id, zone, dv: R.knock[zone], dir, air: !p.grounded, vxBefore: r2(vxBefore) });
+  }
+
+  bodyHit(id: string, part: PartName, dirX: number, cause: string, by: string | null = null): void {
     const p = this.players.get(id);
     const dmg = this.damage.get(id);
     if (!p || !dmg || !this.stats.get(id)?.alive) return;
@@ -863,7 +964,12 @@ export class GameWorld implements RagdollHost {
       const climbed = dmg.legStage - before;
       if (climbed < 0 || climbed > 1) this.anomaly(climbed < 0 ? 'stage_backwards' : 'stage_skipped', id, { from: before, to: dmg.legStage, hits: dmg.legHits }, 'error');
       if (res.kind === 'trip') p.trip(this.tick, cause, dirX);
-      else if (res.kind === 'stump') p.stumpLeg(res.side);
+      else if (res.kind === 'stump' && p.stumpLeg(res.side, dirX)) {
+        // L7: a lost leg you notice: a banner for everyone, and it counts for the awards
+        this.callout('leg_off', id, by, p.parts.torso.translation(), 1, { leg: res.side, legsLeft: p.legsLeft });
+        const t = this.tally.get(id);
+        if (t) t.limbsLost++;
+      }
       if (res.kind !== 'none') {
         this.log.info('damage_stage', { who: id, area: 'legs', stage: dmg.legStage, name: LEG_STAGE_NAMES[dmg.legStage], hits: dmg.legHits, did: res.kind, leg: res.side, cause });
         this.events.push({ type: 'damage_stage', id, area: 'legs', stage: dmg.legStage });
@@ -875,7 +981,7 @@ export class GameWorld implements RagdollHost {
    * A bullet hit a wall/floor (a hole + dust on screens) or a crate (dust). Wall holes are kept for the match (up to
    * DAMAGE.maxWallHoles) so someone joining later sees them too: anything that lasts is world state, not just an event.
    */
-  impact(pos: Vec2, angle: number, on: 'wall' | 'object'): void {
+  impact(pos: Vec2, angle: number, on: 'wall' | 'object' | 'shield'): void {
     this.events.push({ type: 'impact', pos: { ...pos }, angle, on });
     if (on !== 'wall') return;
     this.wallHoles.push({ x: r3(pos.x), y: r3(pos.y), angle: r3(angle) });
@@ -900,7 +1006,10 @@ export class GameWorld implements RagdollHost {
     if (!st) return;
     const zone = PART_ZONE[part];
     if (!st.alive || st.isProtected(this.tick) || this.frozen) {
-      this.log.info('damage_blocked', { id: victimId, by: arrow.ownerId, zone, reason: !st.alive ? 'dead' : this.frozen ? 'match_over' : 'protected' });
+      const reason = !st.alive ? 'dead' : this.frozen ? 'match_over' : 'protected';
+      this.log.info('damage_blocked', { id: victimId, by: arrow.ownerId, zone, reason });
+      // L7: a bullet sparks off the spawn shield (the bubble is drawn from the snapshot's protected flag)
+      if (reason === 'protected') this.impact(point, Math.atan2(arrow.vel.y, arrow.vel.x), 'shield');
       return;
     }
     if (share <= 0) {
@@ -930,7 +1039,8 @@ export class GameWorld implements RagdollHost {
       return;
     }
     if (!normal) return;
-    this.bodyHit(victimId, part, arrow.vel.x, `${zone}_hit:arrow:${arrow.id}`);
+    this.hitReaction(victimId, zone, arrow.vel);
+    this.bodyHit(victimId, part, arrow.vel.x, `${zone}_hit:arrow:${arrow.id}`, arrow.ownerId);
     if (arrow.ownerId !== victimId) this.melee.onBulletHit(victimId, arrow.ownerId); // L5: a critical hit in the air
     const kind = effectKindOf(zone);
     if (kind) {
@@ -957,6 +1067,27 @@ export class GameWorld implements RagdollHost {
    * score more than the holder to take it without killing them. Killing the holder takes it (see `die`).
    */
   private updateCrown(): void {
+    if (this.crownRule === 'off') {
+      if (this.crown) this.setCrown(null, 'off');
+      return;
+    }
+    if (this.crownRule === 'keeper') {
+      // Crown Keeper: a kill takes it (see `die`); the holder scores while holding it (not during the results)
+      if (this.players.size < CROWN.keeperMinPlayers) {
+        if (this.crown) this.setCrown(null, 'too few players');
+        return;
+      }
+      if (this.crown && !this.frozen) {
+        const t = this.tally.get(this.crown);
+        if (t) t.crownTicks++;
+        if (++this.keeperTicks >= CROWN.keeperTicksPerPoint) {
+          this.keeperTicks = 0;
+          const st = this.stats.get(this.crown);
+          if (st) st.score++;
+        }
+      }
+      return;
+    }
     if (this.players.size < CROWN.minPlayers) {
       if (this.crown) this.setCrown(null, 'too few players');
       return;
@@ -974,6 +1105,7 @@ export class GameWorld implements RagdollHost {
   private setCrown(id: string | null, why: string): void {
     const from = this.crown;
     this.crown = id;
+    this.keeperTicks = 0;
     this.log.info('crown_change', { from, to: id, why });
     this.events.push({ type: 'crown', id, from });
   }
@@ -1022,13 +1154,22 @@ export class GameWorld implements RagdollHost {
     } else if (killerStats && killer) {
       killerStats.kills++;
       const crowned = this.crown === id;
-      killerStats.score += crowned ? CROWN.bonus : 1;
-      if (crowned) this.setCrown(killer, 'took it');
+      if (this.crownRule === 'keeper') {
+        // Crown Keeper: kills score nothing; killing the holder (or the first kill while it's free) takes the crown
+        if (crowned || !this.crown) this.setCrown(killer, crowned ? 'took it' : 'free crown');
+      } else {
+        if (this.killsScore) killerStats.score += crowned ? CROWN.bonus : 1;
+        if (crowned) this.setCrown(killer, 'took it');
+      }
+      const team = this.teams.get(killer);
+      if (team !== undefined) this.teamScores[team]++;
       if (this.lastKiller.get(killer) === id) this.callout('revenge', id, killer, pos, 0.8, {});
       if (this.tick - (this.lastKillTick.get(killer) ?? -Infinity) <= STREAK.doubleKillTicks) this.callout('double_kill', id, killer, pos, 1, {});
       this.lastKillTick.set(killer, this.tick);
     }
     if (killer && killer !== id) this.lastKiller.set(id, killer);
+    // Crown Keeper: a holder who dies with nobody to credit (a pit, their own bomb) drops it: the next kill takes it
+    if (this.crownRule === 'keeper' && this.crown === id) this.setCrown(null, 'holder died');
     this.log.info('death', {
       id,
       killer,
@@ -1052,6 +1193,7 @@ export class GameWorld implements RagdollHost {
     // (the old body and its loose pieces went with removeRagdoll: none may be left)
     for (const label of this.bodyLabels.values()) if (label.startsWith(`piece:${id}:`)) this.anomaly('piece_left_behind', id, { piece: label }, 'error');
     this.stats.get(id)!.revive(this.tick);
+    if (this.startWeapon === 'melee') this.melee.arm(id);
     this.log.info('respawn', { id, at: [spot.x, spot.y], facing: spot.facing });
     this.events.push({ type: 'respawn', id });
     if (this.modifier === 'balloons') this.specials.giveBalloon(id, Math.max(1, this.modifierEnd - this.tick));
@@ -1089,7 +1231,8 @@ export class GameWorld implements RagdollHost {
       let nearest = Infinity;
       for (const [other, p] of this.players) {
         // Straight-line distance (not just sideways): arenas have several heights.
-        if (other !== id && this.stats.get(other)?.alive) nearest = Math.min(nearest, dist(p.center(), { x: sp.x, y: sp.y - 1.4 }));
+        // (M3: teammates don't count: spawning next to them is fine)
+        if (other !== id && this.stats.get(other)?.alive && !this.sameTeam(id, other)) nearest = Math.min(nearest, dist(p.center(), { x: sp.x, y: sp.y - 1.4 }));
       }
       if (nearest > fallbackDist) [fallback, fallbackDist] = [sp, nearest];
       if (nearest > bestDist && this.spawnClear(sp, id)) [best, bestDist] = [sp, nearest];
@@ -1203,6 +1346,28 @@ export class GameWorld implements RagdollHost {
   }
 
   /** First collider on the line from `from` to `to`, skipping everything owned by `ignoreOwner`. */
+  /**
+   * L7 melee: the first thing along a weapon line (hand to tip): a living enemy's body part, or something solid that
+   * blocks the swing (a wall, a crate). Apples and bubbles (sensors), shot-off pieces, knocked-away guns and the
+   * dead don't count: the weapon passes them.
+   */
+  meleeRay(from: Vec2, to: Vec2, attacker: string): { point: Vec2; label: string; ownerId: string | null; part: PartName | null } | null {
+    this.refreshQueries();
+    const dir = sub(to, from);
+    if (dir.x === 0 && dir.y === 0) return null;
+    const hit = this.physics.castRay(new RAPIER.Ray(from, dir), 1, true, undefined, undefined, undefined, undefined, (c) => {
+      if (c.isSensor()) return false;
+      const label = this.labelOf(c);
+      if (label.startsWith('piece:') || label.startsWith('dropped_gun:')) return false;
+      const owner = this.colliderOwners.get(c.handle)?.ownerId;
+      // (M3: the weapon passes through teammates)
+      return owner === undefined || (owner !== attacker && !!this.stats.get(owner)?.alive && !this.sameTeam(owner, attacker));
+    });
+    if (!hit) return null;
+    const who = this.colliderOwners.get(hit.collider.handle);
+    return { point: add(from, scale(dir, hit.timeOfImpact)), label: this.labelOf(hit.collider), ownerId: who?.ownerId ?? null, part: who?.part ?? null };
+  }
+
   raycast(from: Vec2, to: Vec2, ignoreOwner: string): Hit | null {
     const dir = sub(to, from);
     if (dir.x === 0 && dir.y === 0) return null;
@@ -1233,6 +1398,16 @@ export class GameWorld implements RagdollHost {
   private strike(arrow: Arrow, hit: Hit): void {
     const impactVel = arrow.vel;
     const body = hit.collider.parent();
+    const mate = this.colliderOwners.get(hit.collider.handle);
+    if (mate?.part && this.sameTeam(mate.ownerId, arrow.ownerId)) {
+      // M3 Team Battle: a teammate in the way stops the bullet (preview = reality: it's a body like any other) but
+      // takes nothing from it: no damage, no push, no special round
+      this.log.info('damage_blocked', { id: mate.ownerId, by: arrow.ownerId, zone: PART_ZONE[mate.part], reason: 'teammate', arrow: arrow.id });
+      this.impact(hit.point, arrow.angle, 'shield');
+      arrow.state = 'gone';
+      arrow.vel = { x: 0, y: 0 };
+      return;
+    }
     let impulse = 0;
     if (body?.isDynamic()) {
       const push = scale(impactVel, ARROW.mass);
@@ -1317,8 +1492,9 @@ export class GameWorld implements RagdollHost {
   }
 
   private checkAnomalies(): void {
+    const gone: RAPIER.RigidBody[] = [];
     this.physics.forEachRigidBody((b) => {
-      if (!b.isDynamic()) return;
+      if (!b.isDynamic() || !b.isEnabled()) return;
       const label = this.bodyLabel(b);
       const p = b.translation();
       const v = b.linvel();
@@ -1328,8 +1504,14 @@ export class GameWorld implements RagdollHost {
       }
       if (length(v) > DEBUG.maxBodySpeed) this.anomaly('body_too_fast', label, { speed: r3(length(v)), p: rv(p) });
       // A player leaving the arena is a death (handled in step), not a physics problem.
-      if (outOfArena(p, this.bounds) && !this.isRagdollPart(b)) this.anomaly('body_out_of_arena', label, { p: rv(p) });
+      // L7: a shot-off piece can fly off the arena (lost legs fly far now): it's switched off where it is, not a problem
+      if (outOfArena(p, this.bounds) && label.startsWith('piece:')) gone.push(b);
+      else if (outOfArena(p, this.bounds) && !this.isRagdollPart(b)) this.anomaly('body_out_of_arena', label, { p: rv(p) });
     });
+    for (const b of gone) {
+      b.setEnabled(false);
+      this.log.info('piece_left_arena', { piece: this.bodyLabel(b), at: rv(b.translation()) });
+    }
     for (const [id, set] of this.effects) {
       for (const e of set.all()) {
         if (!this.stats.get(id)?.alive) this.anomaly('effect_on_dead', id, { kind: e.kind }, 'error');

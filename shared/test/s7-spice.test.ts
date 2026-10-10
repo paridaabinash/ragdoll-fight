@@ -28,8 +28,7 @@ import {
   unlockedHats,
   type GameEvent,
   type LogEntry,
-  type ModifierKind,
-} from '../src';
+  type ModifierKind, SPECIAL } from '../src';
 import { shoot } from './gun-helpers';
 
 beforeAll(() => initPhysics());
@@ -291,12 +290,17 @@ describe('point-blank shots (L2 regression)', () => {
 });
 
 describe('balloons never carry anyone out of the arena (L7)', () => {
-  it('a balloon nobody pops floats up to the top edge and pops there; the player drops back alive', () => {
+  it('a balloon nobody pops floats up and hovers under the top (L7: on screen; it used to carry players off the top)', () => {
     const { world, log } = arena(['a', 'b']);
     world.specials.giveBalloon('a', 3000);
-    for (let i = 0; i < 2400 && !log.some((e) => e.ev === 'balloon_pop'); i++) world.step();
-    expect(log.find((e) => e.ev === 'balloon_pop')).toMatchObject({ id: 'a', reason: 'ceiling' });
-    for (let i = 0; i < 300; i++) world.step();
+    let highest = Infinity;
+    for (let i = 0; i < 2400; i++) {
+      world.step();
+      highest = Math.min(highest, world.player('a').parts.torso.translation().y);
+    }
+    expect(highest).toBeGreaterThan(SPECIAL.balloon.topMargin - 1);
+    expect(log.some((e) => e.ev === 'balloon_float_cap' && e.id === 'a')).toBe(true);
+    expect(log.some((e) => e.ev === 'balloon_pop' && e.reason === 'ceiling')).toBe(false);
     expect(world.playerStats('a').alive).toBe(true);
     expect(log.some((e) => e.ev === 'left_arena' || (e.ev === 'death' && e.cause === 'out_of_arena'))).toBe(false);
     world.dispose();

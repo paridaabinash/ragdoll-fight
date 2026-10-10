@@ -58,6 +58,8 @@ interface Balloon {
   by: string;
   body: RAPIER.RigidBody;
   collider: RAPIER.Collider;
+  /** L7: it reached the float cap once (logged once). */
+  capped?: boolean;
 }
 interface Rope {
   id: number;
@@ -295,11 +297,34 @@ export class Specials {
       if (!p) continue;
       const part = p.parts[b.part];
       const mass = p.attached().reduce((m, x) => m + x.mass(), 0);
-      const full = b.part === 'torso' || b.part === 'head' ? SPECIAL.balloon.torsoLift : SPECIAL.balloon.limbLift;
+      const B = SPECIAL.balloon;
+      const floating = b.part === 'torso' || b.part === 'head';
+      const full = floating ? B.torsoLift : B.limbLift;
       // Ease off near the top rising speed: from the full lift when still, to just holding the weight at riseSpeed.
-      const up = -p.parts.torso.linvel().y;
-      const ease = Math.max(0, Math.min(1, 1 - up / SPECIAL.balloon.riseSpeed));
-      const share = Math.min(full, 1) + (full - Math.min(full, 1)) * ease;
+      const torso = p.parts.torso;
+      const up = -torso.linvel().y;
+      const ease = Math.max(0, Math.min(1, 1 - up / B.riseSpeed));
+      let share = Math.min(full, 1) + (full - Math.min(full, 1)) * ease;
+      if (floating) {
+        // L7 swimming: jump swims up, crouch swims down
+        if (p.controls.jump) share += B.swimUp;
+        if (p.controls.crouch) share -= B.swimDown;
+        // L7 max float: at most topMargin under the arena's top, hovering there (more than holding the weight above
+        // it would carry the body off the top of the screen); the higher over the cap, the less lift, damped
+        const over = B.topMargin - torso.translation().y;
+        if (over > -0.5) share = Math.min(share, 1 - Math.max(0, over + 0.5) * 1.5 - up * 0.6);
+        if (over > -0.5 && !b.capped) { // (logged when the cap starts holding it: it settles just under the cap)
+          b.capped = true;
+          this.w.log.info('balloon_float_cap', { id: b.victim, y: r2(torso.translation().y), cap: B.topMargin });
+        }
+        // ...and in from the sides: a soft push back toward the middle
+        const x = torso.translation().x;
+        const side = x < B.sideMargin ? B.sideMargin - x : x > this.w.bounds.width - B.sideMargin ? this.w.bounds.width - B.sideMargin - x : 0;
+        if (side !== 0) {
+          const vx = torso.linvel().x;
+          for (const pb of p.attached()) this.w.push(pb, { x: (side * B.sideSpring - vx * 2) * pb.mass() * (1 / 60), y: 0 });
+        }
+      }
       this.w.push(part, { x: 0, y: -share * mass * GRAVITY_Y * (1 / 60) });
       const at = part.translation();
       b.body.setNextKinematicTranslation({ x: at.x, y: at.y - SPECIAL.balloon.string });

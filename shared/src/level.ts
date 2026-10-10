@@ -18,7 +18,7 @@ const WALL = 0.5;
  * Builds an arena with no players: walls at both sides, solids, crates, apples, pits and spawn points.
  * The server uses this; the default is the Backyard. Anything wrong with the arena data is logged as an error.
  */
-export function buildArena(world: GameWorld, layout: ArenaLayout = arenaLayout(BACKYARD, 'full')): void {
+export function buildArena(world: GameWorld, layout: ArenaLayout = arenaLayout(BACKYARD, 'full'), opts: { pickups?: boolean } = {}): void {
   const problems = validateArena(layout);
   for (const p of problems) world.log.error('arena_invalid', { arena: layout.id, size: layout.size, problem: p });
   const { width, height } = layout;
@@ -34,7 +34,8 @@ export function buildArena(world: GameWorld, layout: ArenaLayout = arenaLayout(B
   for (const c of layout.crates) world.addBox(c.label, 'dynamic', { x: c.x, y: c.y }, { x: c.size / 2, y: c.size / 2 });
   world.spawnPoints = layout.spawns.map((s) => ({ ...s }));
   for (const a of layout.apples) world.addApple(a.kind, { x: a.x, y: a.y });
-  for (const p of layout.pickups) world.specials.addBubble({ x: p.x, y: p.y });
+  // (M3: no power-up bubbles in a mode without guns: they're shot to be taken)
+  if (opts.pickups !== false) for (const p of layout.pickups) world.specials.addBubble({ x: p.x, y: p.y });
   world.hazards.build(layout.hazards);
   world.log.info('arena_loaded', {
     arena: layout.id,

@@ -73,6 +73,12 @@ export interface ArenaPalette {
   accent: number;
   /** Soft light spots in the sky (lamps, moon). x, y, radius: shares of the screen; alpha at the center. */
   glow?: { color: number; x: number; y: number; radius: number; alpha: number }[];
+  /**
+   * L7: aurora curtains in the sky (fixed on screen like the glows): fine vertical rays rising from a folding line at
+   * height `y` (0 top .. 1 bottom of the screen), `height` tall (screen share), `color` at their foot fading to `top`,
+   * at most `alpha` opaque. `fold` = how much the line waves (screen share), `phase` shifts the waves.
+   */
+  aurora?: { color: number; top: number; y: number; height: number; fold: number; alpha: number; phase: number }[];
   /** Dust puffs (L2) and wall-hit dust. */
   dust: number;
   /** The silhouettes are drawn by code from this seed (same arena = same skyline on every screen). */

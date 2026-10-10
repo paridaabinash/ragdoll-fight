@@ -1,7 +1,9 @@
 import type { ArenaInfo } from '../arena';
 import { NET } from '../constants';
 import type { MatchInfo } from '../match';
+import type { Team } from '../modes';
 import { isHat, type HatKind } from '../spice';
+import { normalizeRoomCode, parseRoomSettings, type GameMode, type RoomSettings } from '../room-settings';
 import type { Shape } from '../ragdoll';
 import type { GameEvent, StaticShape } from '../world';
 
@@ -11,8 +13,11 @@ import type { GameEvent, StaticShape } from '../world';
  */
 
 export type ClientMessage =
-  /** `room`: a room id from the room list, 'new' for a fresh room, or left out for quick play (fullest room with space). */
-  | { t: 'join'; v: number; name: string; room?: string; hat?: HatKind }
+  /**
+   * `room`: a room code (`FROG`, from the list or a friend), 'new' for a fresh room, or left out for quick play (the
+   * fullest public room with space). M1: `settings` only with 'new' (the new room plays them; missing = defaults).
+   */
+  | { t: 'join'; v: number; name: string; room?: string; hat?: HatKind; settings?: RoomSettings }
   /**
    * Sent when something changes. `aim` = the gun's angle (toward the mouse pointer), or null for none (the gun points
    * straight ahead). L3: an angle only (there's no power any more).
@@ -23,6 +28,8 @@ export type ClientMessage =
    * tick (L7: the gun never wobbles): the server decides if the gun is ready (reload by server tick, stamina, alive).
    */
   | { t: 'fire'; seq: number; angle: number }
+  /** M2: my vote for the next arena (results screen of a vote room; the server checks it's one of the options). */
+  | { t: 'vote'; arena: string }
   | { t: 'ping'; c: number };
 
 /** L4: one player's bullet holes (part = PART_NAMES index). */
@@ -31,11 +38,22 @@ export interface PlayerHoles {
   holes: { part: number; x: number; y: number }[];
 }
 
-/** One entry of the room list (GET /rooms on the game server). */
+/** One entry of the room list (GET /rooms on the game server). Private rooms are not listed. */
 export interface RoomInfo {
+  /** The room code (`FROG`). */
   id: string;
+  /** People's names (bots not included). */
   players: string[];
+  bots: number;
   max: number;
+  mode: GameMode;
+  /** The arena being played (id + name), its phase, and seconds left in it. */
+  arena: string;
+  arenaName: string;
+  phase: 'playing' | 'results';
+  secondsLeft: number;
+  /** Who leads and with how much (null: nobody scored yet). */
+  leader: { name: string; score: number } | null;
 }
 
 /** GET /rooms answer: open rooms + the addresses other devices on this network can open to play. */
@@ -58,6 +76,8 @@ export interface RosterEntry {
   bot: boolean;
   /** Cosmetic hat (S7). */
   hat: HatKind;
+  /** M3 Team Battle: 0 red, 1 blue (left out in other modes). */
+  team?: Team;
 }
 
 export type ServerMessage =
@@ -71,6 +91,8 @@ export type ServerMessage =
       you: string;
       slot: number;
       room: string;
+      /** M1: what this room plays. */
+      settings: RoomSettings;
       tick: number;
       arena: ArenaInfo;
       match: MatchInfo;
@@ -122,9 +144,20 @@ export function parseClientMessage(text: string): ClientMessage | { error: strin
   switch (m.t) {
     case 'join': {
       if (!isNum(m.v)) return { error: 'bad_join' };
-      if (m.room !== undefined && (typeof m.room !== 'string' || !/^(new|r\d{1,6})$/.test(m.room))) return { error: 'bad_room' };
+      let room: string | undefined;
+      if (m.room !== undefined) {
+        room = m.room === 'new' ? 'new' : typeof m.room === 'string' ? (normalizeRoomCode(m.room) ?? undefined) : undefined;
+        if (!room) return { error: 'bad_room' };
+      }
       if (m.hat !== undefined && !isHat(m.hat)) return { error: 'bad_hat' };
-      return { t: 'join', v: m.v, name: sanitizeName(m.name), ...(m.room !== undefined ? { room: m.room as string } : {}), ...(m.hat !== undefined ? { hat: m.hat as HatKind } : {}) };
+      let settings: RoomSettings | undefined;
+      if (m.settings !== undefined) {
+        if (room !== 'new') return { error: 'settings_without_new_room' };
+        const s = parseRoomSettings(m.settings);
+        if ('error' in s) return { error: `bad_settings:${s.error}` };
+        settings = s;
+      }
+      return { t: 'join', v: m.v, name: sanitizeName(m.name), ...(room ? { room } : {}), ...(m.hat !== undefined ? { hat: m.hat as HatKind } : {}), ...(settings ? { settings } : {}) };
     }
     case 'input': {
       const aim = m.aim;
@@ -136,6 +169,9 @@ export function parseClientMessage(text: string): ClientMessage | { error: strin
       if (!isSeq(m.seq) || !isNum(m.angle)) return { error: 'bad_fire' };
       // (anything else in it, like a claimed special round or an old client's power or swing tick, is not copied)
       return { t: 'fire', seq: m.seq, angle: m.angle };
+    case 'vote':
+      if (typeof m.arena !== 'string' || !/^[a-z0-9_]{1,32}$/.test(m.arena)) return { error: 'bad_vote' };
+      return { t: 'vote', arena: m.arena };
     case 'ping':
       if (!isNum(m.c)) return { error: 'bad_ping' };
       return { t: 'ping', c: m.c };

@@ -59,21 +59,21 @@ function shoot(world: GameWorld, aim: Aim) {
 }
 
 describe('damage rules', () => {
-  it('a full-speed hit does 20 to the torso, 100 to the head, 12 to arms and legs', () => {
+  it('a full-speed hit does 20 to the torso, 50 to the head (L7: was 100), 12 to arms and legs', () => {
     expect(damageFor('torso', GUN.bulletSpeed)).toBe(20);
-    expect(damageFor('head', GUN.bulletSpeed)).toBe(100);
+    expect(damageFor('head', GUN.bulletSpeed)).toBe(50);
     expect(damageFor('arm', GUN.bulletSpeed)).toBe(12);
     expect(damageFor('leg', GUN.bulletSpeed)).toBe(12);
   });
   it('slower bullets (a lob coming down slowly) do less; faster counts as full; never less than 1', () => {
     expect(damageFor('torso', GUN.bulletSpeed * 0.45)).toBe(10); // half of the full-damage speed
     expect(damageFor('torso', GUN.bulletSpeed * HEALTH.fullDamageSpeedShare)).toBe(20);
-    expect(damageFor('head', GUN.bulletSpeed * 1.5)).toBe(100);
+    expect(damageFor('head', GUN.bulletSpeed * 1.5)).toBe(50);
     expect(damageFor('leg', 0.1)).toBe(1);
   });
-  it('a bullet that slowed a little climbing its arc is still a one-hit headshot', () => {
-    expect(damageFor('head', 31.83)).toBe(HEALTH.max); // measured online: 99 before this rule
-    expect(damageFor('head', 29)).toBe(HEALTH.max);
+  it('a bullet that slowed a little climbing its arc still does full headshot damage (two kill)', () => {
+    expect(damageFor('head', 31.83)).toBe(HEALTH.max / 2); // measured online: 99 of 100 before this rule
+    expect(damageFor('head', 29)).toBe(HEALTH.max / 2);
   });
   it('five full-speed torso hits kill', () => {
     const st = new PlayerStats('x', quietLog());
@@ -106,13 +106,16 @@ describe('stamina', () => {
     const wanted = STAMINA.refillDelayTicks + (STAMINA.recoverAt / STAMINA.refillPerSec) * 60;
     expect(Math.abs(t - restFrom - wanted)).toBeLessThanOrEqual(2);
   });
-  it('a jump needs 20', () => {
-    const st = new PlayerStats('x', quietLog());
-    st.stamina = 19;
-    expect(st.trySpend(STAMINA.jumpCost, 0)).toBe(false);
-    st.stamina = 20;
-    expect(st.trySpend(STAMINA.jumpCost, 0)).toBe(true);
-    expect(st.stamina).toBe(0);
+  it('jumps are free (L7): a jump with no stamina still goes and costs nothing', () => {
+    const { world, logs } = makeWorld(30);
+    world.playerStats(LOCAL_PLAYER).stamina = 0;
+    hold(world, { jump: true }, 1);
+    expect(logs.some((l) => l.ev === 'jump')).toBe(true);
+    expect(logs.some((l) => l.ev === 'jump_blocked' && l.reason === 'stamina')).toBe(false);
+    hold(world, {}, 60);
+    world.playerStats(LOCAL_PLAYER).stamina = 50;
+    hold(world, { jump: true }, 1);
+    expect(world.playerStats(LOCAL_PLAYER).stamina).toBeGreaterThanOrEqual(50); // (it only refills)
   });
   it('in the world: the shot that empties stamina drops the arms; the next is refused', () => {
     const { world, logs } = makeWorld(10);
@@ -136,8 +139,12 @@ describe('protection and death', () => {
     expect(st.takeDamage(10, 'y', 201)).toBe(0);
   });
 
-  it('full-power headshot: one-hit kill, limp body, respawn 3 s later at full health, score counted', () => {
+  it('two full-power headshots kill (L7: one did, at ×5): limp body, respawn 3 s later at full health, score counted', () => {
     const { world, logs } = makeWorld();
+    shoot(world, aimAt(world, `${DUMMY_PLAYER}:head`));
+    expect(world.playerStats(DUMMY_PLAYER).health).toBe(HEALTH.max / 2);
+    expect(logs.some((l) => l.ev === 'death')).toBe(false);
+    for (let i = 0; i < 90; i++) world.step(); // (the hit rocks the head back: let it settle, then aim again)
     shoot(world, aimAt(world, `${DUMMY_PLAYER}:head`));
     const death = logs.find((l) => l.ev === 'death')!;
     expect(death).toMatchObject({ id: DUMMY_PLAYER, killer: LOCAL_PLAYER, cause: 'arrow' });

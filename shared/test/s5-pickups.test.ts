@@ -88,6 +88,7 @@ describe('power-up bubbles', () => {
     const { world, log } = duel(14, 22);
     world.playerStats('v').held = 'bomb';
     world.playerStats(LOCAL_PLAYER).held = null;
+    world.playerStats('v').health = 50; // (L7: a headshot does 50, so this one kills)
     shootFlight(world, aimAt(world, (l) => l === 'v:head')); // headshot
     expect(world.playerStats('v').alive).toBe(false);
     expect(world.playerStats('v').held).toBeNull();

@@ -20,6 +20,7 @@ export const CALLOUT_STYLE: Record<CalloutKind, { text: string; fill: string; st
   tickled: { text: 'HA HA HA!', fill: '#ffffff', stroke: '#000000', size: 24 },
   kaboom: { text: 'KABOOM!', fill: '#ffea00', stroke: '#bf360c', size: 38 },
   disarmed: { text: 'DISARMED!', fill: '#ff9100', stroke: '#000000', size: 38 },
+  leg_off: { text: 'LEG OFF!', fill: '#ff4f81', stroke: '#000000', size: 38 },
   shattered: { text: 'SHATTERED!', fill: '#e1f5fe', stroke: '#4a148c', size: 40 },
   // S6
   bonk: { text: 'BONK!', fill: '#cfd8dc', stroke: '#000000', size: 34 },

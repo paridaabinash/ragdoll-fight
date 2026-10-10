@@ -8,17 +8,17 @@ export const CAMERA = {
   /** L3: how much of the arena's width you see (m) *(start)*. Never more than the arena itself (no space outside it). */
   viewWidth: 36,
   /**
-   * L3: the view leans toward the mouse pointer: with the pointer at the screen edge, the view moves this share of the
-   * way from the middle to that edge *(start: a third)*, so looking far ahead is something you choose.
+   * L7: the view leans toward your aim point by this share of its distance from you *(start: half, so up to 2.5 m)*,
+   * so looking ahead is something you choose. (L3 leaned toward the screen pointer, a third of the way to the edge.)
    */
-  lean: 1 / 3,
+  lean: 0.5,
   /** Smoothing time (s): how quickly the view catches up with you / the lean. */
   followTime: 0.12,
 } as const;
 
 /**
  * Follows your body through an arena bigger than the screen, at a fixed zoom (about CAMERA.viewWidth m wide), leaning
- * toward the mouse pointer (L3: there's no zoom-out while drawing any more: the gun has no draw).
+ * toward your aim point (L7; there's no zoom-out: the gun has no draw).
  * Cosmetic only (the client draws; the server decides), so it never touches the game world.
  */
 export class FollowCamera {
@@ -50,15 +50,15 @@ export class FollowCamera {
   }
 
   /**
-   * `target`: your body center (m), or null to stay put (e.g. not spawned yet). `pointer`: the mouse pointer on the
-   * screen (px), or null for no lean (replays, before the mouse moved).
+   * `target`: your body center (m), or null to stay put (e.g. not spawned yet). `aimOffset`: your aim point's offset
+   * from you (m), or null for no lean (dead, before the mouse moved).
    */
-  update(target: Vec2 | null, pointer: Vec2 | null, deltaMs: number): void {
+  update(target: Vec2 | null, aimOffset: Vec2 | null, deltaMs: number): void {
     const dt = Math.min(deltaMs, 100) / 1000;
     if (target) {
-      // the lean is measured on the screen (pointer vs screen middle), so moving the view doesn't feed back into it
-      const lean = pointer ? { x: (pointer.x - VIEW.width / 2) * CAMERA.lean, y: (pointer.y - VIEW.height / 2) * CAMERA.lean } : { x: 0, y: 0 };
-      const want = { x: target.x * PX_PER_M + lean.x / this.zoom, y: target.y * PX_PER_M + lean.y / this.zoom };
+      // the aim point moves with you, so moving the view never feeds back into the lean
+      const lean = aimOffset ? { x: aimOffset.x * CAMERA.lean, y: aimOffset.y * CAMERA.lean } : { x: 0, y: 0 };
+      const want = { x: (target.x + lean.x) * PX_PER_M, y: (target.y + lean.y) * PX_PER_M };
       const k = 1 - Math.exp(-dt / CAMERA.followTime);
       this.center = { x: this.center.x + (want.x - this.center.x) * k, y: this.center.y + (want.y - this.center.y) * k };
     }

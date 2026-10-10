@@ -11,6 +11,8 @@ Decisions were made together on 2026-10-06/07. Numbers marked *(start)* are star
 > history (what S1–S7 built with the bow). The code and `ragdoll architecture.md` still describe the bow until the
 > matching L phase is built; where they disagree with this file, this file is the plan.
 >
+> **PAUSED 2026-10-10 (resume here):** L7 steps 1-8 are all built and pass all four checks (typecheck, 248 tests, sim 0 problems, netsim 0 problems): speed dial (0.85 for testing; final pick still open), no gun wobble / hand loss, no replays, no cursor + character-relative aim (**locked**), step 2 part 1 (no background silhouettes, quiet wind, players panel + "YOU"), 3 (headshot 50, 2 s shield, bots 24%), 4 (rarer, clearer disarms), 5 (hits knock the body), 6 (melee: bat upswing / mace sweep, hit along the drawn weapon), 7 (LEG OFF! banner, flying shin, stump cap, awards), 8 (springy legs). **Next:** the user looks at the arena designs (`arena-maps.html`, regenerate with `npx tsx tools/arena-map.ts`) and the background themes (`bg-themes.html`, 6 dark themes with more detail) and decides; step 2's colours (neon characters, glowing bullets, the gun's look) wait for the user's colour references. Separate task (its own worktree): bots flip-flopping over pits.
+>
 > **Feel pass L7 (decided 2026-10-08, after playing L0-L6): section 11, "L7".** Clean, easy-to-read visuals; hits you
 > can feel; fewer one-shot deaths; rare, clearly shown disarms; a redesigned melee swing (no pointer, timed clicks).
 
@@ -638,6 +640,15 @@ Each step below says what changes, why it's better than now, and how it's checke
   `feel_report` at 0.85 (times longer, distances the same). **You try 0.85 and 0.75 (two launch configs) and pick**, or
   stay at 1. Only after that does the chosen value become the default (and the sims are re-baselined).
 
+**After-play round (2026-10-10)** ✅: jumps are free (stamina only for weapons); melee in a corner fixed (walls no
+longer cancel a swing; the stroke starts where the weapon has room); balloon floating stays on screen (hovers 2.5 m
+under the top, 1.5 m in from the sides) and you swim (W up, S down, A/D sideways) with a running/paddling animation; a
+body hung on a ledge's corner can jump off; every special round shows a big detailed picture at the muzzle (and flies
+as that picture); Frozen Lake (the aurora arena) is the 5th locked arena. Melee hits on the body or head make the victim
+stagger back 2-3 steps leaning back (facing kept, no fall); a mace hit on the legs still trips. The "equal bullet time"
+idea was dropped by the user. The limp (dragging leg) is clearer: the leg is wrapped in a white bandage, the foot
+scrapes the ground with dust and scuff marks, and the good knee dips deeper on each hop (speed and jump unchanged).
+
 **1b. The gun never wobbles; no hand loss** ✅ (asked for while building step 1). An arm hit no longer swings the
 gun's aim (the back arm still windmills while walking, as a look), and arm/torso hits no longer shoot the back hand
 off (no slower one-handed reload, no wobble after each shot). Leg loss stays. *Why:* the wobble was annoying and losing
@@ -656,12 +667,23 @@ appears in a **legend at the side** (their colour + name). The items below are t
     direction (left, up, into a corner) is obvious; your own gun follows the pointer instantly and smoothly (it does
     already on your screen; it just has to be visible).
   - **One aim line:** the first 0.5 s of the path as a clean solid line in your colour from the muzzle, fading out.
-  - **One simple cursor:** a small ring + dot with the reload ring around it; the system crosshair and anything else at
-    the pointer go.
+  - **No cursor at all** ✅ (the user's call, 2026-10-09; replaces "one simple cursor"): no crosshair, no ring. The aim
+    preview shows where you aim; the gun shows the reload.
+  - **Character-relative aim + a faint dot** ✅ **LOCKED** (2026-10-09, the user: "feels perfect"; don't change it without asking): the mouse moves an aim point attached to your character
+    (max 5 m away), not a spot on the screen, so moving never changes your aim; move the mouse past your body to turn
+    around. A click locks the mouse to the game (Esc frees it). A faint dot in your colour marks the aim point.
   - **A steadier camera:** follow lag 0.12 → 0.05 s and lean 1/3 → 1/5 *(start)*. Today the camera trails a 5.5 m/s
     runner by ~0.66 m, which turns your aim while the mouse stays still (part of "aiming felt weird while moving").
-  - **Backgrounds stay behind:** dimmer, lower-contrast backdrop detail behind the play area, so players, weapons and
-    bullets pop. The L1 contrast test is extended to the gun and melee weapons.
+  - **Backgrounds stay behind** ✅ (2026-10-09, after the user found the buildings chaotic): no silhouettes at all
+    (buildings, chains, trees, hills) in any arena; the sky gradient and soft glows set the mood. Rule for every future
+    arena (`LOOK_RULES`): at most one far layer, and it must be barely visible against the sky (contrast ≤ 1.3).
+  - **Quiet wind** ✅: no tinted box, no streak lines (they looked like bullets); a few tiny faint specks drift with
+    the wind. The aim preview's bend shows its effect.
+  - **Clean screen** ✅: only you are labelled ("YOU ▼" in your colour, above your bars); everyone else is in the
+    **players panel** top left (colour dot, name, score; you in bold; dead players dimmed; ♛ the crown). The match
+    clock is one small line at the top centre; room, ping and the controls help are one quiet line at the bottom (the
+    help only for the first 15 s). The kill feed sits under the clock. Still to come with the colour references: the
+    neon colours, the gun's look, bullets.
   - **After a respawn, find yourself at once:** the camera snaps to you, your shield bubble (step 3), a bright "YOU"
     ring/arrow for 2 s, and the gun points straight ahead until you move the mouse.
   - **A small arrow in your colour above your head**, always, so you never lose yourself in a crowd.
@@ -670,7 +692,12 @@ appears in a **legend at the side** (their colour + name). The items below are t
 - *Check:* a client measurement logged in the browser check: aim drift with a still mouse while running (target under
   2°/s; measured before and after); screenshots compared before/after; the contrast test.
 
-**3. Fewer one-shot deaths, fairer bots, a visible spawn shield.**
+**3. Fewer one-shot deaths, fairer bots, a visible spawn shield.** ✅ built 2026-10-09: headshot 50 (two kill);
+2 s shield bubble in your colour (blinks its last 0.5 s, bullets spark off it, ends when you shoot or swing; logs
+`shield_end {why: time|shot}`, impact `on: 'shield'`, protocol 16); bots aim error 0.07 → 0.3 rad and reaction
+0.4-0.8 s: they hit 24% of shots at moving bots (4 seeds), the `bots` sim checks the rate and prints the median life.
+Also fixed: a bot whose target stood across a gap dithered at the pit edge (it now remembers the pit like a wall).
+Found, not yet fixed: bots standing over a pit flip direction every tick and fall in (a separate task).
 - *What:* headshot ×5 → ×2.5 (50 damage; torso 20, limbs 12 stay); spawn protection 1 s → **2 s, drawn as a shield
   bubble** around the whole character (flickers in its last 0.5 s; bullets spark off it; it ends early if you shoot, so
   it can't be abused); bots hit about **25%** of their shots at a moving player (aim error up, reaction 0.4-0.8 s
@@ -680,7 +707,13 @@ appears in a **legend at the side** (their colour + name). The items below are t
 - *Check:* sim `bots`: bot hit rate on moving bots 20-30%; a new sim `survival` (you = an idle-but-strafing bot vs 3
   bots, 3 min): median life **25-30 s** (was 11.8 s); Vitest: damage table, shield duration and early end.
 
-**4. Disarms: rarer and clearly shown.**
+**4. Disarms: rarer and clearly shown.** ✅ built 2026-10-09: 8%, only after 0.25 s in the air (`critMinAirTicks`);
+the gun tumbles away in a bigger arc (kick 6, spin); `DISARMED!` banner for everyone (already); 0.6 s of empty hands
+(swings refused: `drawing_weapon`; logs `disarm_draw` when the weapon is out, with a flash at the hand); HUD "GUN LOST!
+drawing your bat..." then "GUN LOST: bat until you respawn - click to swing". Measured: about 2 disarms a minute in a
+4-bot fight (bots jump a lot). Also fixed two netsim checks that failed now and then: `game_speed` counted a dodged
+shot (preview said "a player", the player stepped away) as a preview error; `lag` fired at a new angle without aiming
+first (the arm swinging nudges the body after the client's snapshot).
 - *What:* crit chance 25% → **8%**, and only after at least 0.25 s in the air (not the tiny hops while running). When it
   happens: the gun spins away in a big arc; `DISARMED!` at the top for everyone; the victim has ~0.6 s with empty hands
   (can't swing), then draws the bat/mace with a flourish; HUD: "Gun lost: melee until you respawn". (No shaking-gun
@@ -689,7 +722,14 @@ appears in a **legend at the side** (their colour + name). The items below are t
 - *Check:* sim `bots`: crits per minute (target ~1 in a 4-player room); Vitest: no crit from a short hop, the empty-hand
   window refuses swings; netsim: every client sees the disarm on the same tick.
 
-**5. Hits you can feel.**
+**5. Hits you can feel.** ✅ built 2026-10-10: every bullet hit knocks the whole body along the bullet (torso 2.5,
+head 2.1, arms 1.75, legs 0.5 m/s) with a 0.3 s flinch (walk and air control at 25%); a head hit also snaps the head
+and pitches the torso back; a leg hit sweeps the legs so the body pitches forward. Measured by the new sim
+`hit_reaction`: a runner set back 0.42 m, head hit 0.22 rad back, leg hit 0.15 rad forward, a jump lands 0.48 m
+shorter, standing torso hits never fall, no joint warnings. (The plan's start values set a runner back only 0.1 m.)
+Logs `hit_knock {zone, dv, dir, air, vxBefore}`. Also: the netsim `lag` check's first shot was 4-9 cm off because the shooter raised its arm from rest just
+before it (the body hadn't settled); it now aims before the stillness wait, every shot lands within 0.3 cm, and the check
+is tightened to 2 cm.
 - *What:* every bullet hit gives the **whole body** a small knock along the bullet *(start 1.2 m/s torso, 1.0 head,
   0.8 limbs)*, plus a part-specific kick: **head** hit: the head snaps back and the torso pitches back; **torso**: the
   body is set back; **leg**: the legs are swept back along the bullet, so the body pitches forward; **in the air**: the
@@ -701,7 +741,16 @@ appears in a **legend at the side** (their colour + name). The items below are t
   leg-hit forward pitch; a jump hit mid-air lands measurably shorter; a standing body hit in the torso doesn't fall; no
   joint warnings. `feel_report` and `damage_report` still pass.
 
-**6. Melee, redesigned.**
+**6. Melee, redesigned.** ✅ built 2026-10-10: one click = one swing (holding doesn't repeat), toward where you
+face (no aim dot, no reach fan with a melee weapon). Each swing: a 0.13 s wind-up (the arm goes to the start, can't
+hit), the stroke, then the arm is let go (damped) so the weapon swings on and settles. Bat: the upswing, from low
+behind, up and over the top, down in front. Mace (now a long gada, 0.95 m: a shorter one couldn't be low and reach
+the legs at once): a low sweep that skims the floor and rises in front; its hits trip. The hit test follows the drawn
+weapon (hand to tip, `weaponLine`, the same hand the client draws from) between its last and current place on every
+active tick: what you see is what hits; a wall or crate stops it, the floor under you doesn't. Swings drive the
+shoulders harder (the arm lagged 2.5 rad behind before). Measured (sim `melee_motions`): the bat hits head/arms up to
+1.6 m, the mace legs/thigh up to 1.6 m (tripping), both miss at 2.2 m, a hit about 0.35 s after the click. Logs
+`melee_swing {weapon, motion}`, `melee_hit {weapon, tick}`, `melee_blocked`, `melee_miss`.
 - *What:* **no pointer**: a click swings toward where you face; **one click = one swing** (holding doesn't repeat: you
   time each click). Two motions, one per weapon *(start; easy to switch to alternating)*:
   - **Bat: the upswing**: a half circle from low behind, up and over the front, with follow-through: at the end the arm
@@ -719,13 +768,29 @@ appears in a **legend at the side** (their colour + name). The items below are t
   the upswing's settle time, the sweep's trip rate; Vitest: one swing per click, the hit point lies on the weapon path;
   netsim: the same swing and hit on every client.
 
-**7. A lost limb you notice** (from the earlier review). `"Noodle lost a leg!"` at the top for everyone; the piece flies
+**7. A lost limb you notice** ✅ built 2026-10-10: `LEG OFF!` banner for everyone (sub: who on whom); the shin flies
+along the bullet, up and spinning (4.5 / 6 m/s, 16 rad/s), and lands with a thud (dust); the stump end gets a bright
+cap; the off-screen edge marker flashes a small leg sign; awards *Flesh Wound* (longest alive on a stump) and *Most
+Limbs Lost*. A piece that flies off the arena is switched off there. Measured (new sim `stump_survival`, bots that lose
+a leg a second after spawning): they live a median 12 s after the loss (quartiles 4.7 / 22 s; your play log: 3.3 s).
+Netsim `damage` checks the banner reaches every client. Protocol 17 (the `thud` event). (Plan text, as agreed:) `"Noodle lost a leg!"` at the top for everyone; the piece flies
 in a big spinning arc and lands with a thud and dust; stump ends get a bright cut colour so a hopping player stands out
 across the arena; the off-screen edge marker flashes with a small leg/hand icon; results awards *Flesh Wound* (longest
 alive on stumps) and *Most Limbs Lost*. Steps 3 and 5 also give players more time between losing a part and dying.
 *Check:* sim: time from a lost part to death (was a median 3.3 s; target over 6 s); the banner on every client (netsim).
 
-**8. Springy, squishy legs** (from the earlier review). Softer leg motors while running so legs lag and overshoot, a
+**8. Springy, squishy legs** ✅ built 2026-10-10 (two whole legs; hopping, dragging, crouching, a heavy head and
+lying down keep their own legs): running, the knees bend much more on the forward swing (knee lift 0.5 → 1.0, hip
+swing 0.4 → 0.55) and the lifting leg is held at 60% so it lags; in the air the legs dangle loose for a moment after
+the top of a jump and reach down under the body as it falls; landing, the knees sink by the landing speed and spring
+back; legs are drawn as one smooth curve hip → knee → foot, and the body is drawn a little squashed for a moment after
+landing. Measured (new sim `leg_report`): running knees bend 0.9 rad (was 0.61), landing knees bend 0.66 rad (was
+0.06). Kept from going wrong (each found by a sim and fixed at its cause): legs changed on the way UP cut the standing
+climb 1.4 → 1.3 m (the arenas' reach check needs 1.4), so rising legs are left alone; landing on loose dangling legs
+took ~1 s to straighten (they now reach down when falling); a body stuck against a step's face dangled forever
+(dangling only lasts 18 ticks after the top); a loose swing leg while braking kept the body rocking (only while
+running); a heavy head on loose legs fell over (heavy head: firm legs). Jumps, climbs and gaps measure as before
+(1.9 m running / 1.4 m standing climb). (Plan text, as agreed:) Softer leg motors while running so legs lag and overshoot, a
 much bigger knee bend on the forward swing, loose dangling legs in the air after a short tuck, knees that sink on
 landing by the fall speed and spring back; legs drawn as smooth curves (hip → knee → foot), a tiny squash of the body on
 landing. *Why it can work:* running is a push on the whole body, not the legs' doing, so loosening them shouldn't cost

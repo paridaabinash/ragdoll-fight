@@ -93,11 +93,8 @@ export const TEST_LAB: ArenaDef = {
   palette: {
     sky: { top: 0x080c10, bottom: 0x142028 },
     horizon: FLOOR,
-    layers: [
-      { kind: 'factory', color: 0x22303a, depth: 0.15, height: 13 },
-      { kind: 'chains', color: 0x18232b, depth: 0.35, height: 9 },
-      { kind: 'factory', color: 0x0f171d, depth: 0.6, height: 6 },
-    ],
+    // L7 clean look: no silhouettes (buildings, chains, trees made the screen busy); the sky and glows set the mood
+    layers: [],
     terrain: 0x0b1115,
     accent: 0xffa000,
     glow: [

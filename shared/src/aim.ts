@@ -1,4 +1,4 @@
-import { GRAVITY_Y, GUN } from './constants';
+import { AIM_POINT, GRAVITY_Y, GUN } from './constants';
 import type { Vec2 } from './math';
 
 /**
@@ -13,6 +13,25 @@ export interface Aim {
 /** The aim from a point (your shoulder) toward another (the mouse pointer in the world). */
 export function aimAt(from: Vec2, to: Vec2): Aim {
   return { angle: Math.atan2(to.y - from.y, to.x - from.x) };
+}
+
+/**
+ * L7 character-relative aim: the mouse moves an aim point that is attached to your shoulder (an offset in m), not a
+ * spot on the screen, so walking, jumping and the camera never change your aim. It can't go further than
+ * `AIM_POINT.maxDistance` (so a small mouse move always turns you), and it can pass through your body (that's how you
+ * turn around). Non-finite moves are ignored.
+ */
+export function moveAimPoint(offset: Vec2, dx: number, dy: number, max = AIM_POINT.maxDistance): Vec2 {
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return offset;
+  const x = offset.x + dx;
+  const y = offset.y + dy;
+  const d = Math.hypot(x, y);
+  return d > max ? { x: (x * max) / d, y: (y * max) / d } : { x, y };
+}
+
+/** The aim along an aim-point offset; null when it sits exactly on the shoulder (no direction). */
+export function aimAlong(offset: Vec2): Aim | null {
+  return Math.hypot(offset.x, offset.y) > 1e-6 ? { angle: Math.atan2(offset.y, offset.x) } : null;
 }
 
 /** A real number. Anything else (NaN, Infinity) is refused; this guards network input too. */

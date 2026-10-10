@@ -16,6 +16,7 @@ import {
   type Logger,
   type NetBodyInfo,
   type PlayerHoles,
+  type RoomSettings,
   type RosterEntry,
   type ServerMessage,
   type SnapshotData,
@@ -30,7 +31,9 @@ const AIM_SEND_MS = 33;
 export interface Welcome {
   you: string;
   slot: number;
+  /** M1: the room code and what it plays. */
   room: string;
+  settings: RoomSettings;
   arena: ArenaInfo;
   match: MatchInfo;
   statics: StaticShape[];
@@ -99,15 +102,18 @@ export class NetClient {
     private readonly lag: LagSettings,
   ) {}
 
-  /** Connects and joins (`room`: an id from the room list, 'new', or undefined for quick play); resolves on the welcome. */
-  static connect(url: string, name: string, log: Logger, lag: LagSettings, room?: string, hat?: HatKind): Promise<NetClient> {
+  /**
+   * Connects and joins (`room`: a room code, 'new' (M1: with `settings`), or undefined for quick play); resolves on the
+   * welcome.
+   */
+  static connect(url: string, name: string, log: Logger, lag: LagSettings, room?: string, hat?: HatKind, settings?: RoomSettings): Promise<NetClient> {
     log.info('net_connecting', { url, name, lag, room: room ?? 'quick' });
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     const client = new NetClient(ws, log, lag);
     return new Promise((resolve, reject) => {
       let welcomed = false;
-      ws.onopen = () => client.send(JSON.stringify({ t: 'join', v: NET.protocolVersion, name, ...(room ? { room } : {}), ...(hat ? { hat } : {}) }));
+      ws.onopen = () => client.send(JSON.stringify({ t: 'join', v: NET.protocolVersion, name, ...(room ? { room } : {}), ...(hat ? { hat } : {}), ...(settings ? { settings } : {}) }));
       ws.onmessage = (e) =>
         client.delayed('recv', () => {
           const msg = client.receive(e.data as ArrayBuffer | string);
@@ -194,6 +200,18 @@ export class NetClient {
   }
 
   // ---- internals ----
+
+  /** M2: my vote for the next arena (the server checks it; everyone hears it in the match info). */
+  vote(arena: string): void {
+    this.log.info('vote_sent', { arena });
+    this.send(JSON.stringify({ t: 'vote', arena }));
+  }
+
+  /** Leaves the room (M4: back to the menu). */
+  leave(): void {
+    this.timers.forEach(clearInterval);
+    this.ws.close(1000, 'left');
+  }
 
   private send(text: string): void {
     this.io.bytesOut += text.length;

@@ -35,11 +35,8 @@ export const BACKYARD: ArenaDef = {
   palette: {
     sky: { top: 0x0a0b16, bottom: 0x1e1830 },
     horizon: 17,
-    layers: [
-      { kind: 'hills', color: 0x2a2440, depth: 0.15, height: 7 },
-      { kind: 'trees', color: 0x1c1829, depth: 0.35, height: 6 },
-      { kind: 'houses', color: 0x120f1b, depth: 0.6, height: 4.5 },
-    ],
+    // L7 clean look: no silhouettes (buildings, chains, trees made the screen busy); the sky and glows set the mood
+    layers: [],
     terrain: 0x0c0a12,
     accent: 0xd81b60,
     glow: [{ color: 0xc5cae9, x: 0.8, y: 0.16, radius: 0.07, alpha: 0.14 }],

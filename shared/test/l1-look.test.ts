@@ -71,18 +71,21 @@ describe('L1 arena palettes', () => {
     expect(problems).toMatch(/layer 0 .* is darker than the nearer layer 1/);
     expect(problems).toMatch(/glow 0 alpha 0.9/);
     expect(problems).toMatch(/glow 0 #[0-9a-f]+ is too bright/);
-    expect(paletteProblems({ ...DEFAULT_PALETTE, layers: [DEFAULT_PALETTE.layers[0]] }).join()).toMatch(/1 parallax layers, needs 2-3/);
+    expect(problems).toMatch(/2 parallax layers, needs 0-1/);
+    // L7: one far layer is allowed, but only barely visible against the sky
+    expect(paletteProblems({ ...DEFAULT_PALETTE, layers: [{ kind: 'hills', color: 0x11161f, depth: 0.2, height: 8 }] })).toEqual([]);
+    expect(paletteProblems({ ...DEFAULT_PALETTE, layers: [{ kind: 'hills', color: 0x3a4458, depth: 0.2, height: 8 }] }).join()).toMatch(/layer 0 .* stands out from the sky/);
     expect(validateArena(arenaLayout({ ...BACKYARD, palette: bad }, 'full')).join('\n')).toMatch(/backyard\/full: palette: .*contrast/);
   });
 });
 
 describe('L1 two-size callouts', () => {
   it('every callout kind has a size, and the big moments are banners', () => {
-    const kinds: CalloutKind[] = ['cracked', 'ankle_breaker', 'airball', 'sniped', 'point_blank', 'ring_out', 'outta_here', 'splat', 'slip', 'pinned', 'swapped', 'tickled', 'kaboom', 'bonk', 'revenge', 'double_kill', 'self_own', 'humbled', 'disarmed', 'shattered'];
+    const kinds: CalloutKind[] = ['cracked', 'ankle_breaker', 'airball', 'sniped', 'point_blank', 'ring_out', 'outta_here', 'splat', 'slip', 'pinned', 'swapped', 'tickled', 'kaboom', 'bonk', 'revenge', 'double_kill', 'self_own', 'humbled', 'disarmed', 'shattered', 'leg_off'];
     expect([...CALLOUT_KINDS].sort()).toEqual([...kinds].sort());
     for (const k of kinds) expect(['tag', 'banner']).toContain(CALLOUT_SIZE[k]);
     // modifications.md section 5
-    expect(kinds.filter((k) => CALLOUT_SIZE[k] === 'banner').sort()).toEqual(['disarmed', 'double_kill', 'kaboom', 'outta_here', 'revenge', 'ring_out', 'shattered']);
+    expect(kinds.filter((k) => CALLOUT_SIZE[k] === 'banner').sort()).toEqual(['disarmed', 'double_kill', 'kaboom', 'leg_off', 'outta_here', 'revenge', 'ring_out', 'shattered']); // (L7: LEG OFF!)
   });
 });
 

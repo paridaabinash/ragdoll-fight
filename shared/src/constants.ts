@@ -63,6 +63,20 @@ export const ARROW = {
  * L3: the gun. It points at the mouse pointer (distance doesn't matter); every bullet leaves at the same speed and
  * drops with gravity. After each shot a pump/bolt reload; each shot costs stamina. All *(start)* values.
  */
+/**
+ * L7 aim point (client input): the mouse moves a point attached to your shoulder; the gun points at it.
+ * `maxDistance` (m): how far it can go (the view is ~36 x 20 m, so it always stays on screen). `start` (m): where it
+ * starts, ahead of you. `sensitivity`: 1 = the point moves as far in the world as a normal cursor would.
+ * `dotRadius` (m) and `dotAlpha`: the faint dot drawn there.
+ */
+export const AIM_POINT = {
+  maxDistance: 5,
+  start: 3,
+  sensitivity: 1,
+  dotRadius: 0.1,
+  dotAlpha: 0.45,
+} as const;
+
 export const GUN = {
   /** m/s, every shot (the bow's full draw; 0.53 m per tick, more than thin walls are thick). */
   bulletSpeed: 32,
@@ -139,6 +153,10 @@ export const MOTOR = {
   elbow: { stiffness: 3000, damping: 110 },
   /** Shoulders: velocity motor. Target spin = gain × angle error, capped at maxSpeed; factor = how hard it pushes. */
   shoulderAim: { gain: 20, maxSpeed: 20, factor: 800 },
+  /** L7: a melee swing drives the shoulders harder and faster (at shoulderAim the arm lagged 2.5 rad behind the swing). */
+  shoulderSwing: { gain: 35, maxSpeed: 32, factor: 800 },
+  /** L7: after a swing the weapon arm is let go but damped this much, so the weapon swings on and settles (limp: it looped right round). */
+  swingSettleFactor: 120,
   shoulderIdle: { gain: 5, maxSpeed: 6, factor: 200 },
   /**
    * Most torque a shoulder motor may use (N·m). Holding the arm out takes ~6, a fast swing ~30. Without a cap the
@@ -161,6 +179,12 @@ export const MOTOR = {
 } as const;
 
 export const MOVE = {
+  /**
+   * L7: off the ground but hung still (torso slower than `unstickSpeed` m/s) for `unstickTicks`: resting on something
+   * (a ledge's corner under the torso, the feet in the air), so a jump is allowed. Only the feet count as ground.
+   */
+  unstickTicks: 20,
+  unstickSpeed: 0.3,
   /** Upward speed added to every body part on jump (m/s). Height ≈ v² / 2g ≈ 1.4 m. */
   jumpSpeed: 7.5,
   jumpCooldownTicks: 20,
@@ -254,7 +278,8 @@ export const HEALTH = {
   max: 100,
   /** Damage of a full-speed hit before the body-part multiplier. Scales down with slower arrows. */
   baseDamage: 20,
-  zoneMultiplier: { head: 5, torso: 1, arm: 0.6, leg: 0.6 },
+  /** L7: head ×5 → ×2.5 (50 damage, two headshots kill): the one-shot headshot was the main way lives ended in seconds. */
+  zoneMultiplier: { head: 2.5, torso: 1, arm: 0.6, leg: 0.6 },
   /**
    * Arrows at or above this share of top speed do full damage. A full-power arrow loses a little speed climbing
    * its arc (31.83 m/s instead of 32 measured online), and that must not turn a one-hit headshot into 99.
@@ -264,9 +289,64 @@ export const HEALTH = {
   killCreditTicks: 180, // 3 s
 } as const;
 
+/**
+ * L7 hits you can feel. Before, a bullet pushed only the part it hit (3.2 N·s: ~0.3 m/s for the whole body), and the
+ * run push wiped that out within a hundredth of a second. Now every hit knocks the WHOLE body along the bullet
+ * (`knock`, m/s by zone), plus a kick by zone: a head hit snaps the head back (`headSnap`, m/s on the head) and pitches
+ * the torso back; a leg hit sweeps the legs along (`legSweep`, m/s on the legs) so the body pitches forward
+ * (`pitch`, rad/s of torso spin: + = away from the shooter). For `flinchTicks` the walk and air control push at
+ * `flinchControl`, so the knock shows instead of being walked off at once. Mid-air the knock cuts the jump's speed.
+ * Measured (sim `hit_reaction`, each case vs the same body unhit): the plan's start (1.2 m/s, 0.2 s flinch) set a
+ * runner back only 0.1 m; 2.5 m/s + 0.3 s: 0.42 m (target 0.3-0.6), head hit pitches back 0.22 rad, a jump lands
+ * 0.48 m shorter, standing torso hits stay up. Leg hits: a small whole-body knock and a strong sweep, so the top stays
+ * and the body pitches forward (0.15 rad; knock 0.7x with sweep 3: 0.07).
+ */
+export const HIT_REACTION = {
+  knock: { head: 2.1, torso: 2.5, arm: 1.75, leg: 0.5 },
+  headSnap: 2.5,
+  legSweep: 5,
+  pitch: { head: 5, torso: 0, arm: 0, leg: -8 },
+  flinchTicks: 18,
+  flinchControl: 0.25,
+} as const;
+
+/**
+ * L7 springy, squishy legs (two whole legs only; hopping, dragging, crouching and lying down keep their own legs).
+ * - Running (run key held, not braking): the swing leg (the one lifting) is held at `swingShare` of its strength, so it
+ *   lags and overshoots (0.35 left the body rocking after a stop);
+ *   the standing leg keeps all of it (balance: the run is a push on the whole body, not the legs' doing).
+ * - In the air: rising, the legs are left as they are (a tuck or loose legs on the way up cut the standing climb
+ *   1.4 -> 1.3 m, which the arenas' reach check relies on); falling slowly (around the top) they open into the
+ *   splits (`split`, funny legs; L7 had them dangle loose); falling faster than `reachFall` they reach down under the
+ *   body to catch the landing.
+ * - Landing: the knees sink by the landing speed (`sinkPerSpeed` rad per m/s, at most `sinkMax`) and spring back over
+ *   `landTicks`, the legs held at `landShare` meanwhile (springy, not stiff).
+ * Measured by sim `leg_report` (feel_report and body_report must still pass with 0 falls).
+ */
+export const LEGS = {
+  swingShare: 0.6,
+  /**
+   * Funny legs, Split Leap: around the top of a jump (from the apex for `dangleTicks`, instead of dangling) the legs
+   * open into the splits, front leg forward and back leg back by `hip` rad, knees almost straight, held at `share`;
+   * falling faster they snap shut and reach down to land (`reachFall`). Not on the way up (the climb, see above).
+   */
+  split: { hip: 1.1, knee: 0.15, share: 0.6 },
+  /** A jump this many ticks before the feet left the ground counts as "this fall began with a jump" (the push takes a few ticks). */
+  splitAfterJumpTicks: 15,
+  /** Falling faster than `reachFall` m/s, the legs reach down under the body (at `reachShare`) to catch the landing. */
+  reachFall: 2,
+  /** The Split Leap is held at most this long after the top of a jump (ticks); it replaced L7's dangling legs. */
+  dangleTicks: 18,
+  reachShare: 0.7,
+  sinkPerSpeed: 0.2,
+  sinkMax: 0.9,
+  landTicks: 14,
+  landShare: 0.8,
+} as const;
+
+/** Stamina is for weapons only (L7: jumps are free; they used to cost 20 and a tired player couldn't jump). */
 export const STAMINA = {
   max: 100,
-  jumpCost: 20,
   refillPerSec: 30,
   /**
    * Refill starts this long after the last spend. L3: a shot counts as spending until its reload is done, so holding
@@ -279,7 +359,12 @@ export const STAMINA = {
 
 export const RESPAWN = {
   delayTicks: 180, // 3 s limp on the ground
-  protectTicks: 60, // 1 s of no damage after respawning
+  /**
+   * L7: 2 s of no damage after respawning (was 1 s), drawn as a shield bubble that flickers in its last
+   * `shieldFlickerTicks`; bullets spark off it; it ends at once when you shoot or swing (so it can't be abused).
+   */
+  protectTicks: 120,
+  shieldFlickerTicks: 30,
   /** Respawn with the feet this far above the spawn point, so the body never starts touching the ground. */
   lift: 0.05,
 } as const;
@@ -310,8 +395,19 @@ export const WALK = {
    */
   fullStrideSpeed: 3,
   /** Hip swing (rad) and swing-leg knee lift (rad) at full walking speed. */
-  hipSwing: 0.4,
-  kneeLift: 0.5,
+  hipSwing: 0.55, // (L7: 0.4 -> 0.55 with the springy legs; Big Scissor: see below)
+  /**
+   * Funny legs, Big Scissor walk (picked from funny-legs-mock.html): the hips swing much wider and the trailing leg's
+   * heel flicks up behind. `heelFlick` = extra knee bend (rad) on the leg behind, from `heelFlickFrom` of the way back.
+   */
+  scissorSwing: 0.55,
+  heelFlick: 0.9,
+  heelFlickFrom: 0.45,
+  /** Seconds to blend the scissor swing in (run key pressed) and out (let go / braking). */
+  scissorBlend: 0.15,
+  /** A stop let go in the air without a jump (a stride bound, a small drop) brakes on landing, if that's within this. */
+  brakeWaitTicks: 30,
+  kneeLift: 1.0, // (L7: 0.5 -> 1.0: a much bigger knee bend on the forward swing)
   /**
    * After letting go: brake to a stop this hard (m/s²), feet still slippery. S4 dash feel: was 25 (a crisp stop);
    * 15 + the brake lean below: a stop pitches ~0.25 rad forward and snaps back, no stumble (sim body_report).
@@ -357,8 +453,11 @@ export const NET = {
    * 14: critical hits + melee (L5): weapon and broken limbs per player in snapshots, the knocked-away gun as a prop, `shot` replies for swings.
    * 15: the welcome carries the game speed (L7 dial): the client must step its previews by the server's game time;
    *     `fire` has no swing tick any more (L7: the gun never wobbles).
+   * 16-18: L7 (shield impacts, leg off, limp leg in snapshots).
+   * 19: M1-M3: room codes, room settings in `join`/welcome, the room list's details, `vote`, mode/vote/round/team
+   *     scores in match info, teams in the roster.
    */
-  protocolVersion: 15,
+  protocolVersion: 19,
   /** Humans per room. Filler bots don't count. */
   maxPlayers: 8,
   /** Snapshot every 3 physics ticks = 20 per second. */
@@ -377,12 +476,26 @@ export const NET = {
   statsEveryTicks: 300,
 } as const;
 
+/** M1: what a room's creator can pick (see `parseRoomSettings`). */
+export const ROOM = {
+  /** People per room: the creator picks from this range (bots don't count). */
+  minPlayers: 2,
+  maxPlayers: NET.maxPlayers,
+  /** Match length range and default (minutes). */
+  minutes: [2, 5] as const,
+  defaultMinutes: 3,
+  /** M2: arenas offered in a vote. */
+  voteOptions: 3,
+} as const;
+
 // ---- Slapstick S2: matches + bots ----
 
-/** One match: ends when someone reaches the kill target or the time runs out; then results, then the next arena. */
+/**
+ * One match: ends when someone reaches the score target (M3: the mode's, `MODES`) or the time runs out; then results,
+ * then the next arena. M1: a room's settings pick the length (minutes); this is the default.
+ */
 export const MATCH = {
   lengthTicks: 3 * 60 * 60, // 3 min
-  killTarget: 15,
   resultsTicks: 10 * 60, // 10 s results screen
 } as const;
 
@@ -392,15 +505,24 @@ export const BOT = {
   fillTo: 4,
   names: ['Wobbles', 'Noodle', 'Bonk', 'Flop', 'Pickle', 'Sprocket', 'Biscuit'],
   /**
-   * Random aim error (rad, standard deviation): 0.07 ≈ ±1.4 m at 20 m. Measured (sim `bots`, 4 players, narrow Test Lab):
-   * 0.035 → ~70% of shots hit, 0.07 → ~61%, 0.09 → ~56%. Most hits are close range, so this mainly sets long-shot skill.
-   * Tune by feel in play.
+   * Random aim error (rad, standard deviation). L7: 0.07 → 0.3 so bots hit about a quarter of their shots at a moving
+   * player (sim `bots`, bullet hits on moving bots per shot at them, 4 seeds each: 0.07 → 51%, 0.15 → 39%, 0.25 → 30%,
+   * 0.3 → 24%, 0.35 → 22%). Most hits are close range, where an angle error barely matters, so it falls slowly.
    */
-  aimError: 0.07,
+  aimError: 0.3,
   /** L5: a melee bot swings when the enemy's center is within this share of MELEE.reach (parts stick out past the center). */
   meleeReachShare: 0.9,
-  /** L3: ticks spent aiming at a new target before the first shot (reaction time; the gun has no draw). */
-  aimTicks: [12, 30],
+  /** Ticks spent aiming at a new target before the first shot (reaction time; the gun has no draw). L7: 0.4-0.8 s (was 0.2-0.5 s). */
+  aimTicks: [24, 48],
+  /**
+   * M1: the room's bot level scales the aim error and the reaction time (normal = the numbers above). Easy misses about
+   * twice as often; hard hits about a third of its shots at a moving player (sim `bots` with SIM_BOT_LEVEL).
+   */
+  levels: {
+    easy: { aimErrorScale: 1.7, aimTicksScale: 1.5 },
+    normal: { aimErrorScale: 1, aimTicksScale: 1 },
+    hard: { aimErrorScale: 0.6, aimTicksScale: 0.7 },
+  },
   /** L3: after a shot, the chance to keep shooting the same target on the next reload instead of walking a bit. */
   keepShooting: 0.55,
   /** L3: stop shooting below this stamina and wait (walking) until it's back to `restUntil`, so a bot rarely empties its arms. */
@@ -417,10 +539,14 @@ export const BOT = {
   avoidTicks: 180,
   /** Wanting to walk this long without getting 1 m anywhere is logged as an anomaly (it should never happen). */
   stuckAnomalyTicks: 300,
-  /** Looking ahead while walking (m): torso center height over the feet, knee-height ray, a step's max height, ray length. */
-  torsoAboveFeet: 1.4,
+  /**
+   * Looking ahead while walking (m, measured up from the lowest sole): knee-height ray, the highest step it jumps (higher
+   * is a wall: turn around), the same on two stumps (sim jump_reach: they climb 0.7 m; REACH.stumps.climb promises
+   * 0.6), ray length.
+   */
   kneeHeight: 0.4,
   maxStepUp: 1.3,
+  maxStepUpStumps: 0.6,
   lookAhead: 1.1,
   /** Jump a step when walking at least this fast (m/s), or when this close to it (m) at any speed (L6: a standing jump climbs 1.4 m, so no backing up for a run-up). */
   jumpSpeedNeeded: 1.5,
@@ -527,7 +653,18 @@ export const SPECIAL = {
    * L7: a balloon that floats up to `popBelowTop` m under the arena's top edge pops there (the player drops back):
    * in a 20 s "Everyone Has Balloons" round an unpopped balloon carried a player out over the top (sim chaos).
    */
-  balloon: { ticks: 240, torsoLift: 1.2, limbLift: 0.7, riseSpeed: 1.2, string: 1.2, radius: 0.35, popBelowTop: 0.5 },
+  /**
+   * L7 floating (a balloon on the torso/head): it hovers at most `topMargin` m under the arena's top (no higher: it used
+   * to carry players off the top of the screen) and a stiff push (`sideSpring` m/s² per m: 10 lost to the air-control
+   * push and let it out of the arena, sim balloon_float) keeps it `sideMargin` m in
+   * from the sides. You swim: jump (W / Space) adds `swimUp` of the body's weight in lift, crouch (S) takes `swimDown`
+   * off; A / D push sideways like air control. The body runs and paddles in the air (`swimHz` cycles a second, `idleHz`
+   * when no key is held).
+   */
+  balloon: {
+    ticks: 240, torsoLift: 1.2, limbLift: 0.7, riseSpeed: 1.2, string: 1.2, radius: 0.35, popBelowTop: 0.5,
+    topMargin: 2.5, sideMargin: 1.5, sideSpring: 150, swimUp: 0.35, swimDown: 0.3, swimHz: 1.6, idleHz: 0.6,
+  },
   /**
    * Oil: a puddle this wide on the floor under the hit, for this long. Feet in it have almost no grip. Standing
    * still, the legs slowly slide into a split; walking, the legs scramble, then the body shoots forward on its belly.
@@ -582,7 +719,39 @@ export const HAZARD = {
 // ---- Slapstick S7: match spice ----
 
 /** Bounty crown: on with this many players; killing the holder scores this much (a normal kill scores 1). */
-export const CROWN = { minPlayers: 3, bonus: 2 } as const;
+export const CROWN = {
+  minPlayers: 3,
+  bonus: 2,
+  /** M3 Crown Keeper: the crown needs this many players, and its holder scores 1 point per this many ticks held. */
+  keeperMinPlayers: 2,
+  keeperTicksPerPoint: 60,
+} as const;
+
+/**
+ * M3: game modes' numbers (the rules themselves are in `modes.ts`). Targets: the score that ends a match early.
+ * Starting points, to tune after play.
+ */
+export const MODE = {
+  ffaTarget: 15,
+  /** Crown Keeper: seconds holding the crown. */
+  crownTarget: 60,
+  /** Last Ragdoll Standing: round wins. */
+  roundsTarget: 3,
+  meleeTarget: 15,
+  chaosTarget: 15,
+  /** Team Battle: the team's kills. */
+  teamTarget: 25,
+  /** Chaos mode: chaos rounds come this much more often (60 s → 25 s) and last this share as long (20 s → 18 s). */
+  chaosEveryScale: 25 / 60,
+  chaosLengthScale: 0.9,
+} as const;
+
+/**
+ * M3 Last Ragdoll Standing: the pause after a round (everyone sees who won it), and the longest a round may last: then
+ * the player with the most health left wins it (a tie: nobody). Sim `modes`: a round with no time limit stalled for
+ * over a minute when two players couldn't reach each other; most rounds end in 20-30 s.
+ */
+export const ROUND = { pauseTicks: 3 * 60, maxTicks: 60 * 60 } as const;
 
 /** Chaos rounds: one every `everyTicks` of a match, lasting `ticks`, announced `announceTicks` ahead. */
 export const MODIFIER = {
@@ -614,6 +783,13 @@ export const LIMB = {
   /** Speed (m/s) of the small kick a shot-off piece gets, so it tumbles away instead of standing there. */
   pieceKick: 2,
   /**
+   * L7: a leg shot off flies: along the bullet (`along` m/s), up (`up` m/s), spinning (`spin` rad/s), so everyone sees
+   * it go. (The plain `pieceKick` was a small tumble you missed.) It lands with a thud: a piece that was falling
+   * faster than `thudFall` m/s and then stops falling (slower than 1 m/s) makes a `thud` event (dust on screens).
+   */
+  lostLeg: { along: 4.5, up: 6, spin: 16 },
+  thudFall: 3,
+  /**
    * L4 dragging limp: the hurt leg hangs (motors at `dragStrength` of normal) trailing behind (hip `dragHip` rad, knee
    * `dragKnee` rad bent), its foot slippery so it's pulled along; the body hops on the good leg like one-leg mode.
    */
@@ -622,6 +798,11 @@ export const LIMB = {
   dragStrength: 0.06,
   /** A dragging leg costs speed (a full one-leg hop runs at full speed: L0). */
   dragSpeed: 0.75,
+  /**
+   * L7: limping on a dragged leg, the good knee dips this much deeper (rad) between hops and comes back up for the next
+   * push: a heavier, clearer limp. Walking speed and jump height stay the same (the body is moved by pushes, not legs).
+   */
+  hopDip: 0.55,
 } as const;
 
 /**
@@ -652,29 +833,59 @@ export const DAMAGE = {
  * All *(start)* values, measured by the sim scenario `melee`.
  */
 export const MELEE = {
-  critAirChance: 0.25,
+  /**
+   * L7: 25% → 8%, and only after `critMinAirTicks` in the air (0.25 s: not the tiny hops of running). 20 crits in 7 min
+   * were too many to notice each one. After a crit the hands are empty for `drawTicks` (0.6 s: swings are refused),
+   * then the bat/mace comes out.
+   */
+  critAirChance: 0.08,
+  critMinAirTicks: 15,
+  drawTicks: 36,
   /** A glove punch counts for a wall-splat crit for this long after it (ticks). */
   gloveSplatTicks: 90,
-  /** Reach (m) from the shoulder to a part's center, and how far off the aim (rad, each side) a swing hits. */
+  /** About how far (m) a swing reaches from the shoulder (bots close in to it; the real hit test is the weapon's path). */
   reach: 1.8,
-  arc: 1.0,
-  /** A swing: the arm sweeps from `from` to `to` (rad, relative to the aim, toward the facing) over `swingTicks`; the hit is checked at `hitTick`. */
-  swing: { from: -1.4, to: 0.9, swingTicks: 14, hitTick: 7 },
+  /**
+   * L7 swings: one click = one swing, toward where you FACE (no pointer). First a short wind-up (`windup` ticks: the arm
+   * goes to the start, no hits), then the stroke: the arm sweeps the weapon through an angle in the facing frame
+   * (0 = straight ahead, + = down, y points down) from `from` to `to` over `ticks`; then the arm goes loose for
+   * `settleTicks` (the weapon swings on with its momentum and settles). The hit is tested along the drawn weapon
+   * (hand to tip) between its last and current place on every tick from `activeFrom` (share of the stroke) to
+   * `activeAfter` ticks into the settle, so what you see is what hits.
+   * - bat: the upswing: from low behind, up and over the top, down in front.
+   * - mace: the low sweep: from low behind, along the floor (about 15 cm above it at the bottom, standing), to low in
+   *   front: a hit trips the victim.
+   * Measured with tools/probes/swing.ts (tip path and the arm's lag behind its target).
+   */
+  motions: {
+    bat: { windup: 8, from: 2.5, to: 6.9, ticks: 16, activeFrom: 0.45, activeAfter: 4, settleTicks: 18, trips: false },
+    mace: { windup: 8, from: 2.3, to: 0.6, ticks: 14, activeFrom: 0.3, activeAfter: 2, settleTicks: 10, trips: true },
+  },
+  /** The weapon's length (m) from the hand to its far end (the bat's tip / the mace's spikes), as drawn. L7: the mace 0.74 → 0.95 (a long gada): standing, a shorter one couldn't be low and reach a body's legs at once (its sweep hit torsos or missed). */
+  weaponLength: { bat: 0.92, mace: 0.95 },
   /** Ticks between swings (the gun's reload slot) and stamina per swing. */
   cooldownTicks: 36,
   stamina: 8,
   damage: 35,
   headDamage: 45,
-  /** The hit knocks the victim along the swing (m/s). */
-  push: 5,
+  /**
+   * The hit knocks the victim along the swing (m/s). L7: 5 -> 3, and the victim then STAGGERS back: for `stagger.ticks`
+   * the legs take quick steps away from the hit (`stagger.speed` m/s, facing kept) with the torso leaned back
+   * (`stagger.lean` rad), then catch the balance. (A mace hit on the legs trips instead.)
+   */
+  push: 3,
+  stagger: { ticks: 42, speed: 2.6, lean: 0.28 },
   /** A player with a broken limb takes this much more damage. */
   brokenDamage: 1.25,
   shatterAfter: 3,
   /** Melee players run this much faster and take this share of bullet damage. */
   runFactor: 1.25,
   bulletShare: 0.7,
-  /** The knocked-away gun: its box (half sizes, m: the size it is drawn, so it lies on the floor as seen), and its kick (m/s). */
-  gun: { hx: 0.62, hy: 0.09, kick: 4 },
+  /**
+   * The knocked-away gun: its box (half sizes, m: the size it is drawn, so it lies on the floor as seen), its kick
+   * (m/s; L7: 4 → 6, a big arc you can follow) and spin (rad/s; L7: it tumbles away).
+   */
+  gun: { hx: 0.62, hy: 0.09, kick: 6, spin: 14 },
 } as const;
 
 /**

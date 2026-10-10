@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Funny Legs Options</title>
+<style>
+  :root { --bg: #05060a; --panel: #0b0d14; --text: #d6dde2; --muted: #8a959d; --cyan: #00e5ff; --yellow: #ffea00; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 1320px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2.section { font-size: 17px; margin: 26px 0 8px; color: var(--cyan); }
+  p { margin: 4px 0 12px; color: var(--muted); max-width: 900px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 10px 0 4px; padding: 10px 12px; background: var(--panel); border-radius: 10px; }
+  .bar label { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+  .bar input[type=range] { width: 160px; accent-color: var(--cyan); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border-radius: 10px; padding: 10px 12px 12px; border: 1px solid transparent; }
+  .card.now { border-color: rgba(255, 255, 255, 0.12); }
+  .card.pick { border-color: var(--yellow); }
+  .card h3 { font-size: 15px; margin: 0 0 2px; display: flex; justify-content: space-between; gap: 8px; }
+  .card h3 small { color: var(--yellow); font-weight: 700; font-size: 12px; }
+  .card .what { color: var(--muted); font-size: 13px; margin: 0 0 8px; min-height: 40px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 6px; background: #080a12; }
+  .notes { background: var(--panel); border-radius: 10px; padding: 12px 16px; margin-top: 22px; }
+  .notes li { margin: 4px 0; color: var(--text); }
+  .notes b { color: var(--yellow); }
+</style>
+</head>
+<body>
+<main>
+<h1>Funny legs: walking and jumping options</h1>
+<p>A mock-up, not the game: the same stick character (cyan = you) walking back and forth, drawn like the game draws legs (each leg a curve through the knee). The first card in each row is how it moves now. Pick one walk and one jump (or mix), and how strong.</p>
+<div class="bar">
+  <label>Strength <input id="amt" type="range" min="0" max="150" value="100" /> <b id="amt-out">100%</b></label>
+  <label><input id="slow" type="checkbox" /> Slow motion (x0.35)</label>
+  <label>Smoke size <input id="smoke" type="range" min="30" max="120" value="60" /> <b id="smoke-out">60%</b></label>
+  <label><input id="ghost" type="checkbox" checked /> Show foot trails</label>
+</div>
+
+<h2 class="section">Walking</h2>
+<div class="grid" id="walks"></div>
+
+<h2 class="section">Jumping (each walks normally and jumps every 1.5 s; click a card to jump now)</h2>
+<div class="grid" id="jumps"></div>
+
+<h2 class="section">Trails (Big Scissor + Split Leap, your picks; click a card to jump)</h2>
+<p>All cosmetic: drawn only on screens, nothing new over the network. The number in each card's corner is how many smoke puffs are alive right now (the cost). Every puff is the same small pre-drawn soft image, so the game draws them all in one go.</p>
+<div class="grid" id="trails"></div>
+
+<div class="notes">
+  <b>Trail notes:</b>
+  <ul>
+    <li><b>Low cost by design:</b> a fixed pool of puffs per player (oldest reused, never more), spawned by distance the foot travels (not every frame), all drawn with one pre-made soft image (one batched draw on the GPU); ribbons are two short lines per foot; nothing is drawn for players off the screen; a "fewer effects" setting can halve the pool on weak phones.</li>
+    <li><b>Colour:</b> smoke takes the arena's dust colour with a hint of the player's colour, so it reads as smoke, not as a shot, and stays darker than players and bullets (the look rules).</li>
+    <li><b>Same code path as today's dust:</b> it would replace the L2 running puffs and grow the landing puff; take-off and landing already come from what's drawn, so the network sends nothing new.</li>
+  </ul>
+  <b>Earlier picks:</b> walk <b>A (Big Scissor)</b> + jump <b>J1 (Split Leap)</b> + the knees-out landing every card shows. They read clearly at game size, they're silly without being messy, and they stay close to how the legs already work (bigger swing, a pose at the top of the jump).
+  <ul>
+    <li><b>Hits follow the legs.</b> Bullets hit the physics legs, not the drawing, so the real leg motors must make these poses (preview = reality). Purely drawn tricks (B's wobble lines, D's rubber bend) must stay small or a player would shoot a leg that isn't there.</li>
+    <li><b>Fair for everyone:</b> wider legs are a slightly bigger target while walking and jumping; it's the same for every player, and I'll measure the leg hit rate in the sim before and after.</li>
+    <li><b>Speed and jump height stay the same:</b> only the look of the legs changes; the sim checks walk speed and jump height don't move.</li>
+    <li><b>Hurt legs keep their own look:</b> a stump hops and a limp leg drags as now; these styles are for whole legs.</li>
+  </ul>
+</div>
+</main>
+<script>
+// ---- the figure (m): roughly the game's proportions ----
+const BODY = { thigh: 0.46, shin: 0.46, torso: 0.62, headR: 0.2, limbW: 0.11, torsoW: 0.15 };
+const SPEED = 2.2;            // m/s across the mock (slower than the game so you can see it)
+const STRIDE = 1.15;          // m per step cycle in the mock
+const PX = 105;               // px per m
+const W = 640, H = 340, GROUND = 300;
+/** Standing leg length (m): in the air the hip follows the jump arc, whatever the legs do. */
+const STAND = BODY.thigh + BODY.shin - 0.02;
+const CYAN = '#00e5ff', ACCENT = '#29e0c8', TERRAIN = '#10141c';
+
+const TAU = Math.PI * 2;
+const pos = (x) => Math.max(0, x);
+const smooth = (t) => t * t * (3 - 2 * t);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/**
+ * A leg = hip angle (rad from straight down; + = forward) and knee bend (rad; + = the shin folds back).
+ * Each style gives both legs for the step phase `p` (0..1 per cycle) and strength `k` (0..1.5).
+ */
+const WALKS = {
+  now: {
+    name: 'Now',
+    what: 'Today: hip swing 0.55, knee lift on the forward swing.',
+    legs(p, k) {
+      return [0, 0.5].map((o) => {
+        const ph = (p + o) * TAU;
+        return { hip: 0.55 * Math.sin(ph), knee: 0.12 + 0.6 * pos(Math.cos(ph)) };
+      });
+    },
+    bob: 0.03, tilt: 0,
+  },
+  scissor: {
+    name: 'A · Big Scissor',
+    pick: true,
+    what: 'Legs open much wider (front leg kicks forward, back leg trails), the back heel flicks up. Bouncy, cartoon run.',
+    legs(p, k) {
+      return [0, 0.5].map((o) => {
+        const ph = (p + o) * TAU;
+        const s = Math.sin(ph);
+        return { hip: (0.55 + 0.5 * k) * s, knee: 0.1 + 0.55 * pos(Math.cos(ph)) + 1.1 * k * pos(-s - 0.45) };
+      });
+    },
+    bob: 0.07, tilt: 0,
+  },
+  waddle: {
+    name: 'B · Penguin Waddle',
+    what: 'Short, stiff, quick steps; the body rocks forward and back and bobs up and down. Feet slap down flat.',
+    legs(p, k) {
+      return [0, 0.5].map((o) => {
+        const ph = (p * 1.6 + o) * TAU;
+        return { hip: 0.28 * Math.sin(ph), knee: 0.04 + 0.12 * pos(Math.cos(ph)), wobble: 0.04 * k * Math.sin(ph * 2) };
+      });
+    },
+    bob: 0.06, tilt: 0.16, cadence: 1.6,
+  },
+  march: {
+    name: 'C · High-Knee March',
+    what: 'Knees pump up to the belly on every step, toes pointed: a proud (silly) parade march.',
+    legs(p, k) {
+      return [0, 0.5].map((o) => {
+        const ph = (p + o) * TAU;
+        const up = pos(Math.cos(ph));
+        return { hip: 0.35 * Math.sin(ph) + 0.95 * k * up * up, knee: 0.15 + 1.9 * k * up };
+      });
+    },
+    bob: 0.06, tilt: -0.05,
+  },
+  noodle: {
+    name: 'D · Noodle Legs',
+    what: 'Rubbery legs: they bend like noodles and lag behind the body, the knees overshoot and wobble.',
+    legs(p, k) {
+      return [0, 0.5].map((o) => {
+        const ph = (p + o) * TAU;
+        return { hip: 0.7 * Math.sin(ph - 0.5), knee: 0.25 + 0.8 * pos(Math.cos(ph - 0.9)) + 0.25 * k * Math.sin(ph * 3), wobble: 0.13 * k * Math.sin(ph * 2 + o * 3) };
+      });
+    },
+    bob: 0.05, tilt: 0.05,
+  },
+};
+
+/** Air poses: `t` = 0 take-off .. 1 landing. */
+const JUMPS = {
+  now: {
+    name: 'Now',
+    what: 'Today: the legs dangle after the top, then reach down for the landing.',
+    legs(t, k) {
+      const reach = smooth(pos((t - 0.6) / 0.4));
+      return [{ hip: lerp(-0.3, 0.15, reach), knee: lerp(0.9, 0.15, reach) }, { hip: lerp(-0.6, -0.1, reach), knee: lerp(1.0, 0.2, reach) }];
+    },
+  },
+  split: {
+    name: 'J1 · Split Leap',
+    pick: true,
+    what: 'Legs fly wide open into the splits at the top (hurdler / ballet leap), then snap shut to land.',
+    legs(t, k) {
+      const open = Math.sin(Math.min(1, t / 0.8) * Math.PI);
+      return [{ hip: 1.25 * k * open + 0.1, knee: 0.15 }, { hip: -1.25 * k * open - 0.1, knee: 0.15 + 0.3 * (1 - open) }];
+    },
+  },
+  tuck: {
+    name: 'J2 · Cannonball',
+    what: 'Knees to the chest at the top (a ball), then both legs kick straight down to land.',
+    legs(t, k) {
+      const tuck = Math.sin(Math.min(1, t / 0.75) * Math.PI);
+      return [0, 1].map((i) => ({ hip: 1.5 * k * tuck + (i ? -0.1 : 0.05), knee: 0.15 + 2.3 * k * tuck }));
+    },
+  },
+  bicycle: {
+    name: 'J3 · Air Bicycle',
+    what: 'Keeps running in the air like a cartoon that ran off a cliff: fast pedalling legs.',
+    legs(t, k) {
+      return [0, 0.5].map((o) => {
+        const ph = (t * 3.2 + o) * TAU;
+        const land = smooth(pos((t - 0.82) / 0.18));
+        return { hip: lerp(0.9 * k * Math.sin(ph), 0, land), knee: lerp(0.3 + 1.4 * k * pos(Math.cos(ph)), 0.15, land) };
+      });
+    },
+  },
+  starfish: {
+    name: 'J4 · Starfish Flail',
+    what: 'Legs fling apart and flail wildly on the way up, then panic-reach for the ground.',
+    legs(t, k) {
+      const f = Math.sin(Math.min(1, t / 0.8) * Math.PI);
+      return [0, 1].map((i) => ({ hip: (i ? -1 : 1) * 0.9 * k * f + 0.35 * k * f * Math.sin(t * 38 + i * 2), knee: 0.2 + 0.7 * k * f * pos(Math.sin(t * 29 + i)) }));
+    },
+  },
+};
+
+// ---- trails: smoke puffs (pooled soft sprites), neon ribbons, afterimages ----
+/** One pre-drawn soft puff (grey smoke) and a cyan-tinted one: every puff is this image, scaled and faded. */
+function softPuff(inner, mid, outer) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  r.addColorStop(0, inner); r.addColorStop(0.45, mid); r.addColorStop(1, outer);
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  return c;
+}
+const SMOKE = softPuff('rgba(205,214,224,0.9)', 'rgba(150,165,182,0.42)', 'rgba(120,135,150,0)');
+const SMOKE_CYAN = softPuff('rgba(170,245,255,0.85)', 'rgba(60,190,215,0.38)', 'rgba(20,120,140,0)');
+const rnd = Math.random;
+
+function addPuffs(fx, at, n, size, dirX, pool, tint) {
+  for (let i = 0; i < n; i++) {
+    if (fx.puffs.length >= pool) fx.puffs.shift(); // (the pool is full: the oldest puff is reused)
+    fx.puffs.push({ x: at.x + (rnd() - 0.5) * 0.08, y: at.y - 0.03, vx: -dirX * (0.15 + rnd() * 0.35) + (rnd() - 0.5) * 0.5 * (n > 2 ? 1.6 : 1), vy: -(0.12 + rnd() * 0.35), r: size * 1.25 * (0.6 + rnd() * 0.5), age: 0, life: 0.55 + rnd() * 0.45, tint: tint && rnd() < 0.5 });
+  }
+}
+
+function stepPuffs(fx, dt) {
+  for (const p of fx.puffs) {
+    p.age += dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 1 - Math.min(1, dt * 2.5); // (air drag: puffs slow down and hang)
+  }
+  fx.puffs = fx.puffs.filter((p) => p.age < p.life);
+}
+
+function drawPuffs(g, fx) {
+  for (const p of fx.puffs) {
+    const t = p.age / p.life;
+    const r = p.r * (1 + 1.5 * t); // grows as it fades
+    g.globalAlpha = Math.pow(1 - t, 1.4) * 0.75;
+    g.drawImage(p.tint ? SMOKE_CYAN : SMOKE, (p.x - r) * PX, (p.y - r) * PX, 2 * r * PX, 2 * r * PX);
+  }
+  g.globalAlpha = 1;
+}
+
+/** Today's L2 dust, as the game does it: a few round puffs at take-off, landing and every 1.2 m of running. */
+function drawDots(g, fx) {
+  for (const p of fx.puffs) {
+    const t = p.age / p.life;
+    g.fillStyle = `rgba(120,135,150,${0.55 * (1 - t)})`;
+    g.beginPath(); g.arc(p.x * PX, p.y * PX, p.r * 0.5 * PX, 0, TAU); g.fill();
+  }
+}
+
+/** A short glowing streak behind each foot: a soft wide pass and a thin bright core, fading with age. */
+function drawRibbons(g, fx, now, keep, color, wide) {
+  for (const r of fx.ribbons) {
+    while (r.length && now - r[0].t > keep) r.shift();
+    for (let i = 1; i < r.length; i++) {
+      const a = 1 - (now - r[i].t) / keep;
+      g.strokeStyle = `rgba(${color},${0.16 * a})`; g.lineWidth = wide * a; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(r[i - 1].x * PX, r[i - 1].y * PX); g.lineTo(r[i].x * PX, r[i].y * PX); g.stroke();
+      g.strokeStyle = `rgba(${color},${0.75 * a})`; g.lineWidth = 3 * a;
+      g.beginPath(); g.moveTo(r[i - 1].x * PX, r[i - 1].y * PX); g.lineTo(r[i].x * PX, r[i].y * PX); g.stroke();
+    }
+  }
+}
+
+/**
+ * T5: three kinds of smoke, each with its own shape and motion, so you can read what happened from the smoke alone.
+ * A puff: where, speed, how it slows (drag), rises (lift), grows, how flat it is (sy < 1 = wider than tall), life.
+ */
+function addShaped(fx, pool, p) {
+  if (fx.puffs.length >= pool) fx.puffs.shift();
+  fx.puffs.push({ age: 0, sy: 1, grow: 1.5, drag: 2.5, lift: 0, tint: false, alpha: 0.75, ...p });
+}
+function stepShaped(fx, dt) {
+  for (const p of fx.puffs) {
+    p.age += dt;
+    p.vx *= 1 - Math.min(1, dt * p.drag);
+    p.vy = p.vy * (1 - Math.min(1, dt * p.drag)) - p.lift * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+  }
+  fx.puffs = fx.puffs.filter((p) => p.age < p.life);
+}
+function drawShaped(g, fx) {
+  for (const p of fx.puffs) {
+    const t = p.age / p.life;
+    const r = p.r * (1 + p.grow * t);
+    g.globalAlpha = Math.pow(1 - t, 1.3) * p.alpha;
+    g.drawImage(p.tint ? SMOKE_CYAN : SMOKE, (p.x - r) * PX, (p.y - r * p.sy) * PX, 2 * r * PX, 2 * r * p.sy * PX);
+  }
+  g.globalAlpha = 1;
+}
+
+/** WALK: a low, flat scuff each time a foot pushes off: it stays near the ground and drifts back, gone in half a second. */
+function walkScuff(fx, pool, foot, groundM, dir) {
+  for (let i = 0; i < 2; i++) addShaped(fx, pool, { x: foot.x - dir * 0.05, y: groundM - 0.02, vx: -dir * (0.5 + rnd() * 0.5), vy: -(0.05 + rnd() * 0.1), r: 0.13 + rnd() * 0.05, sy: 0.55, grow: 1.4, drag: 4, life: 0.45 + rnd() * 0.15, alpha: 0.8 });
+}
+/** JUMP: a launch blast: puffs shoot down and out from under the feet in a V, then rise; a hint of the player's colour. */
+function jumpBlast(fx, pool, at, dir) {
+  for (let i = 0; i < 6; i++) {
+    const side = i % 2 ? 1 : -1;
+    addShaped(fx, pool, { x: at.x + side * 0.05, y: at.y - 0.02, vx: side * (1.2 + rnd() * 0.9) - dir * 0.4, vy: 0.4 + rnd() * 0.3, r: 0.1 + rnd() * 0.05, grow: 1.4, drag: 6, lift: 1.4, life: 0.55 + rnd() * 0.2, tint: rnd() < 0.5, alpha: 0.75 });
+  }
+  addShaped(fx, pool, { x: at.x, y: at.y - 0.05, vx: -dir * 0.2, vy: -0.6, r: 0.13, sy: 1.5, grow: 0.8, drag: 4, life: 0.35, tint: true, alpha: 0.6 }); // (a short upward streak: the push)
+}
+/** LAND: a wide pancake ring racing out along the ground both ways (bigger the harder you land), plus two slow tall puffs. */
+function landRing(fx, pool, at, size) {
+  const n = Math.round(8 + 4 * size);
+  for (let i = 0; i < n; i++) {
+    const side = i % 2 ? 1 : -1;
+    addShaped(fx, pool, { x: at.x + side * 0.08, y: at.y - 0.03, vx: side * (1.8 + rnd() * 2.2) * size, vy: -(0.05 + rnd() * 0.15), r: (0.15 + rnd() * 0.07) * (0.8 + 0.4 * size), sy: 0.6, grow: 2, drag: 3, life: 0.8 + rnd() * 0.35, alpha: 0.85 });
+  }
+  for (const side of [-1, 1]) addShaped(fx, pool, { x: at.x + side * 0.2, y: at.y - 0.08, vx: side * 0.3, vy: -0.25, r: 0.22 * size, sy: 1.1, grow: 1.6, drag: 2, lift: 0.35, life: 1.1, alpha: 0.65 });
+}
+
+/**
+ * Cartoon smoke: each puff is a little cloud made of 3-5 round blobs. It POPS in (overshoots its size), holds, then
+ * shrinks away to nothing (cartoons don't fade, they shrink). `outline`: a dark outline around the whole cloud and a
+ * white shine (classic cartoon); otherwise flat two-tone (lighter top, darker bottom), tinted toward the player's colour.
+ */
+/** Cartoon smoke size (the slider): 60% = "a little more than subtle", the user's ask. */
+const smokeSize = () => Number(document.getElementById('smoke').value) / 100;
+function addToon(fx, pool, p) {
+  if (fx.puffs.length >= pool) fx.puffs.shift();
+  p = { ...p, r: p.r * smokeSize() };
+  const n = 3 + Math.floor(rnd() * 3);
+  const blobs = Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * TAU + rnd() * 0.6;
+    return { dx: Math.cos(a) * 0.55, dy: Math.sin(a) * 0.4 * (p.sy ?? 1), rr: 0.55 + rnd() * 0.35 };
+  });
+  blobs.push({ dx: 0, dy: 0, rr: 0.8 });
+  fx.puffs.push({ age: 0, drag: 3, lift: 0, ...p, blobs });
+}
+function stepToon(fx, dt) {
+  stepShaped(fx, dt);
+  for (const l of fx.lines ?? []) l.age += dt;
+  if (fx.lines) fx.lines = fx.lines.filter((l) => l.age < l.life);
+  if (fx.star) fx.star.age += dt;
+}
+const backOut = (t) => 1 + 2.7 * Math.pow(t - 1, 3) + 1.7 * Math.pow(t - 1, 2);
+function toonScale(t) {
+  if (t < 0.18) return backOut(t / 0.18); // pop in with an overshoot
+  if (t < 0.55) return 1;
+  return Math.max(0, 1 - (t - 0.55) / 0.45); // shrink away
+}
+function drawToon(g, fx, outline) {
+  const pass = (fn) => { for (const p of fx.puffs) { const s = p.r * toonScale(p.age / p.life); if (s > 0.005) for (const b of p.blobs) fn(p, b, s); } };
+  const circle = (x, y, r) => { g.beginPath(); g.arc(x * PX, y * PX, Math.max(0.5, r * PX), 0, TAU); g.fill(); };
+  if (outline) {
+    // outline first (every blob a bit bigger, dark), then the fills on top: one outline around the whole cloud
+    g.fillStyle = '#141a26';
+    pass((p, b, s) => circle(p.x + b.dx * s, p.y + b.dy * s, b.rr * s + 0.012 + 0.012 * smokeSize()));
+    g.fillStyle = '#dfe7f0';
+    pass((p, b, s) => circle(p.x + b.dx * s, p.y + b.dy * s, b.rr * s));
+    g.fillStyle = '#ffffff';
+    pass((p, b, s) => b.rr > 0.75 && circle(p.x + b.dx * s - 0.25 * s, p.y + b.dy * s - 0.25 * s, 0.22 * s));
+  } else {
+    g.fillStyle = '#5f7f95';
+    pass((p, b, s) => circle(p.x + b.dx * s, p.y + b.dy * s + 0.12 * s, b.rr * s));
+    g.fillStyle = '#9fd3e3';
+    pass((p, b, s) => circle(p.x + b.dx * s, p.y + b.dy * s - 0.06 * s, b.rr * s * 0.92));
+  }
+  // jump: speed lines under the feet, shrinking down
+  for (const l of fx.lines ?? []) {
+    const t = l.age / l.life;
+    g.strokeStyle = outline ? `rgba(255,255,255,${1 - t})` : `rgba(159,211,227,${1 - t})`;
+    g.lineWidth = 2; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(l.x * PX, (l.y + t * 0.3) * PX); g.lineTo(l.x * PX, (l.y + l.len * (1 - t) + t * 0.3) * PX); g.stroke();
+  }
+  // land: a quick impact star
+  const st = fx.star;
+  if (st && st.age < 0.14) {
+    const k = 1 - st.age / 0.14;
+    g.fillStyle = outline ? '#ffea00' : '#9fd3e3';
+    g.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU, r = (i % 2 ? 0.12 : 0.34) * (0.6 + 0.6 * (1 - k)) * smokeSize();
+      g.lineTo((st.x + Math.cos(a) * r * 1.6) * PX, (st.y - 0.05 + Math.sin(a) * r * 0.7) * PX);
+    }
+    g.globalAlpha = k; g.fill(); g.globalAlpha = 1;
+  }
+}
+
+/** WALK: two little cloud balls kicked up behind each push-off; they hop back and pop away. */
+function toonWalk(fx, pool, foot, groundM, dir) {
+  for (let i = 0; i < 2; i++) addToon(fx, pool, { x: foot.x - dir * (0.08 + i * 0.1), y: groundM - 0.07, vx: -dir * (0.4 + rnd() * 0.4), vy: -(0.3 + rnd() * 0.3), r: 0.1 + rnd() * 0.04, lift: -0.9, life: 0.42 + rnd() * 0.12 });
+}
+/** JUMP: two clouds burst out sideways from under the feet + three speed lines shooting down. */
+function toonJump(fx, pool, at) {
+  for (const side of [-1, 1]) addToon(fx, pool, { x: at.x + side * 0.15, y: at.y - 0.08, vx: side * (1.0 + rnd() * 0.4), vy: -0.15, r: 0.18, sy: 0.8, drag: 5, life: 0.5 });
+  fx.lines = fx.lines ?? [];
+  for (const dx of [-0.12, 0, 0.12]) fx.lines.push({ x: at.x + dx, y: at.y - 0.35 - Math.abs(dx), len: 0.3, age: 0, life: 0.25 });
+}
+/** LAND: a big cloud bank rolling out both ways along the ground, an impact star, then it all shrinks away. */
+function toonLand(fx, pool, at) {
+  // (a lighter bank: 4 flatter clouds, quicker)
+  for (let i = 0; i < 4; i++) {
+    const side = i % 2 ? 1 : -1;
+    const far = Math.floor(i / 2);
+    addToon(fx, pool, { x: at.x + side * (0.12 + far * 0.12), y: at.y - 0.06, vx: side * (1.3 + far * 0.8), vy: -0.08 - far * 0.06, r: 0.24 - far * 0.04, sy: 0.65, drag: 3.8, life: 0.6 + far * 0.08 });
+  }
+  fx.star = { x: at.x, y: at.y, age: 0 };
+}
+
+function toonTrail(name, what, outline, suggest) {
+  return {
+    name, what, suggest, pool: 24,
+    update(s, fx, feet, ev, groundM) {
+      feet.forEach((f, i) => {
+        const down = f.y > groundM - 0.04;
+        if (!down && fx.wasDown[i] && s.airT < 0 && (f.x - s.x) * s.dir < 0) toonWalk(fx, this.pool, f, groundM, s.dir);
+        fx.wasDown[i] = down;
+      });
+      if (ev.takeoff) toonJump(fx, this.pool, ev.ground);
+      if (ev.landed) toonLand(fx, this.pool, ev.ground);
+    },
+    draw(g, fx) { drawToon(g, fx, outline); },
+    step: stepToon,
+  };
+}
+
+const TRAILS = {
+  toon: toonTrail('T6 · Cartoon Smoke (outlined)', 'Classic cartoon: chunky white cloud balls with a dark outline and a shine. They POP in and shrink away. WALK: little balls kicked up behind each step. JUMP: two clouds burst sideways + speed lines. LAND: a cloud bank rolls out both ways + an impact star.', true, true),
+  toonFlat: toonTrail('T7 · Cartoon Smoke (flat, neon)', 'The same shapes and timing without outlines: flat two-tone clouds tinted toward the neon look, so they sit closer to the game\'s clean style.', false, false),
+  dust: {
+    name: 'T0 · Now (the game\'s dust)',
+    what: 'Today: a few round puffs at take-off, at landing and every 1.2 m of running.',
+    pool: 30,
+    update(s, fx, feet, ev) {
+      if (ev.takeoff) addPuffs(fx, ev.ground, 3, 0.16, s.dir, this.pool);
+      if (ev.landed) addPuffs(fx, ev.ground, 5, 0.2, 0, this.pool);
+      if (s.dist - fx.lastRun > 1.2 && s.airT < 0) { fx.lastRun = s.dist; addPuffs(fx, ev.ground, 1, 0.14, s.dir, this.pool); }
+    },
+    draw(g, fx) { drawDots(g, fx); },
+  },
+  shaped: {
+    name: 'T5 · Smoke: walk / jump / land',
+    what: 'Your pick, with three looks. WALK: a low flat scuff as each foot pushes off, drifting back. JUMP: a blast shooting down and out in a V, then rising, tinted your colour. LAND: a wide pancake ring racing out along the ground (bigger after a higher fall), plus two slow tall puffs.',
+    pool: 40,
+    update(s, fx, feet, ev, groundM) {
+      feet.forEach((f, i) => {
+        const down = f.y > groundM - 0.04;
+        // the foot leaves the ground behind the body = a push-off: one scuff (only while walking, not in the air)
+        if (!down && fx.wasDown[i] && s.airT < 0 && (f.x - s.x) * s.dir < 0) walkScuff(fx, this.pool, f, groundM, s.dir);
+        fx.wasDown[i] = down;
+      });
+      if (ev.takeoff) jumpBlast(fx, this.pool, ev.ground, s.dir);
+      if (ev.landed) landRing(fx, this.pool, ev.ground, 1.2);
+    },
+    draw(g, fx) { drawShaped(g, fx); },
+    step: stepShaped,
+  },
+  smoke: {
+    name: 'T1 · Smoke Puffs',
+    what: 'Soft grey puffs left by each foot as it scrapes along; they swell, drift back and up, and fade. Bigger bursts at take-off and landing.',
+    pool: 40,
+    update(s, fx, feet, ev, groundM) {
+      feet.forEach((f, i) => {
+        const low = f.y > groundM - 0.22;
+        const last = fx.lastSpawn[i];
+        if (low && (!last || Math.hypot(f.x - last.x, f.y - last.y) > 0.2)) { fx.lastSpawn[i] = { ...f }; addPuffs(fx, { x: f.x, y: Math.min(f.y, groundM) }, 1, 0.13, s.dir, this.pool, false); }
+        if (!low) fx.lastSpawn[i] = null;
+      });
+      if (ev.takeoff) addPuffs(fx, ev.ground, 5, 0.17, s.dir, this.pool);
+      if (ev.landed) addPuffs(fx, ev.ground, 9, 0.22, 0, this.pool);
+    },
+    draw(g, fx) { drawPuffs(g, fx); },
+  },
+  ribbon: {
+    name: 'T2 · Neon Ribbon',
+    what: 'Each foot leaves a short glowing streak in the player\'s colour that fades in a quarter second: shows the scissor and the splits as arcs. No particles at all.',
+    pool: 0,
+    update(s, fx, feet, ev, groundM, now) { feet.forEach((f, i) => fx.ribbons[i].push({ ...f, t: now })); },
+    draw(g, fx, now) { drawRibbons(g, fx, now, 0.25, '0,229,255', 12); },
+  },
+  combo: {
+    name: 'T3 · Ribbon + Smoke Plants',
+    what: 'A faint short ribbon from each foot, plus a little smoke only where a foot plants, and a smoke ring when the Split Leap lands. Cheap and reads well at game size.',
+    pool: 24,
+    update(s, fx, feet, ev, groundM, now) {
+      feet.forEach((f, i) => {
+        fx.ribbons[i].push({ ...f, t: now });
+        const down = f.y > groundM - 0.04;
+        if (down && !fx.wasDown[i]) addPuffs(fx, { x: f.x, y: groundM }, 2, 0.12, s.dir, this.pool, true); // a foot plants
+        fx.wasDown[i] = down;
+      });
+      if (ev.takeoff) addPuffs(fx, ev.ground, 4, 0.16, s.dir, this.pool, true);
+      if (ev.landed) addPuffs(fx, ev.ground, 8, 0.22, 0, this.pool, true);
+    },
+    draw(g, fx, now) { drawPuffs(g, fx); drawRibbons(g, fx, now, 0.16, '0,229,255', 8); },
+  },
+  ghosts: {
+    name: 'T4 · Afterimages',
+    what: 'Faded copies of the legs a moment behind (onion skin), strongest during the Split Leap: a sense of speed with no particles. Plus today\'s landing dust.',
+    pool: 12,
+    update(s, fx, feet, ev, groundM, now, pose) {
+      if (now - fx.lastGhost > 0.045) { fx.lastGhost = now; fx.ghosts.push(pose); if (fx.ghosts.length > 4) fx.ghosts.shift(); }
+      if (ev.landed) addPuffs(fx, ev.ground, 5, 0.2, 0, this.pool);
+    },
+    draw(g, fx, now, s) {
+      drawDots(g, fx);
+      const strong = s.airT >= 0 ? 1 : 0.45;
+      fx.ghosts.forEach((p, i) => {
+        const a = ((i + 1) / (fx.ghosts.length + 1)) * 0.3 * strong;
+        for (const l of p.legs) drawLeg(g, p.hip, l, p.facing, `rgba(0,229,255,${a})`);
+      });
+    },
+  },
+};
+
+// ---- one animated card ----
+function card(parent, def, kind) {
+  const el = document.createElement('div');
+  el.className = 'card' + (def.pick || def.suggest ? ' pick' : '') + (def.name === 'Now' ? ' now' : '');
+  el.innerHTML = `<h3><span>${def.name}</span>${def.pick ? '<small>picked</small>' : def.suggest ? '<small>my pick</small>' : ''}</h3><div class="what">${def.what}</div>`;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  el.append(c);
+  parent.append(el);
+  const s = { c, g: c.getContext('2d'), def, kind, x: 1.2, dir: 1, dist: 0, trail: [], airT: -1, nextJump: 0.6, land: 0,
+    fx: { puffs: [], ribbons: [[], []], ghosts: [], lastSpawn: [null, null], wasDown: [true, true], lastRun: 0, lastGhost: 0 } };
+  // click: jump now (every card, walking ones too)
+  c.style.cursor = 'pointer';
+  c.onclick = () => { if (s.airT < 0) { s.airT = 0; s.nextJump = 1.5; } };
+  return s;
+}
+
+function footOf(hip, leg, facing) {
+  const kx = hip.x + facing * Math.sin(leg.hip) * BODY.thigh, ky = hip.y + Math.cos(leg.hip) * BODY.thigh;
+  const a = leg.hip - leg.knee;
+  return { knee: { x: kx, y: ky }, foot: { x: kx + facing * Math.sin(a) * BODY.shin, y: ky + Math.cos(a) * BODY.shin } };
+}
+
+function drawLeg(g, hip, leg, facing, shade) {
+  const { knee, foot } = footOf(hip, leg, facing);
+  // one curve through the knee, like the game (control point so the curve passes through the knee)
+  const w = leg.wobble ?? 0;
+  const cx = 2 * knee.x - (hip.x + foot.x) / 2 + facing * w, cy = 2 * knee.y - (hip.y + foot.y) / 2;
+  g.strokeStyle = shade;
+  g.lineWidth = BODY.limbW * PX;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(hip.x * PX, hip.y * PX);
+  g.quadraticCurveTo(cx * PX, cy * PX, foot.x * PX, foot.y * PX);
+  g.stroke();
+  return foot;
+}
+
+function draw(s, dt, k, ghost) {
+  const { g, def } = s;
+  const walk = s.kind === 'walk' ? def : s.kind === 'trail' ? WALKS.scissor : WALKS.now;
+  const jump = s.kind === 'jump' ? def : s.kind === 'trail' ? JUMPS.split : JUMPS.now;
+  const wasAir = s.airT >= 0;
+  // walk along; turn at the edges
+  s.x += s.dir * SPEED * dt;
+  s.dist += SPEED * dt * (walk.cadence ?? 1);
+  if (s.x > W / PX - 1.1) s.dir = -1;
+  if (s.x < 1.1) s.dir = 1;
+  const p = (s.dist / STRIDE) % 1;
+  let legs = walk.legs(p, k);
+  let lift = 0;
+  // jump cards: a jump every 1.5 s; any card: a click jumps now (0.62 s in the air), then the knees-out landing squash
+  if (s.kind === 'jump' || s.kind === 'trail') s.nextJump -= dt;
+  {
+    if (s.airT < 0 && s.nextJump <= 0) { s.airT = 0; s.nextJump = 1.5; }
+    if (s.airT >= 0) {
+      s.airT += dt / 0.62;
+      if (s.airT >= 1) { s.airT = -1; s.land = 1; }
+      else { legs = jump.legs(s.airT, k); lift = 4 * 0.6 * s.airT * (1 - s.airT); }
+    }
+  }
+  if (s.land > 0) s.land = Math.max(0, s.land - dt / 0.22);
+  const squash = Math.sin(s.land * Math.PI) * (0.5 + 0.5 * k);
+  if (squash > 0 && s.airT < 0) legs = legs.map((l) => ({ ...l, hip: l.hip + 0.35 * squash, knee: l.knee + 0.75 * squash }));
+  const facing = s.dir;
+  // hip height: the lower foot touches the ground (in the air: lifted)
+  const groundM = GROUND / PX;
+  const reach = s.airT >= 0 ? STAND : Math.max(...legs.map((l) => footOf({ x: 0, y: 0 }, l, 1).foot.y));
+  const bob = (walk.bob ?? 0) * k * Math.abs(Math.sin(p * TAU * (walk.cadence ?? 1))) * (s.airT < 0 ? 1 : 0);
+  const hip = { x: s.x, y: groundM - reach - lift - bob };
+  const tilt = (walk.tilt ?? 0) * k * Math.sin(p * TAU * 2 * (walk.cadence ?? 1)) * (s.airT < 0 ? 1 : 0);
+
+  g.clearRect(0, 0, W, H);
+  // backdrop: dark sky, terrain, bright edge
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#070912'); sky.addColorStop(1, '#141a2a');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  g.fillStyle = TERRAIN; g.fillRect(0, GROUND, W, H - GROUND);
+  g.fillStyle = ACCENT; g.fillRect(0, GROUND, W, 3);
+
+  // the trail cards: their trail, behind the body
+  if (s.kind === 'trail') {
+    s.clock = (s.clock ?? 0) + dt; // (animation time: trails fade the same in slow motion)
+    const now = s.clock;
+    const feet = legs.map((l) => footOf(hip, l, facing).foot);
+    const ground = { x: hip.x, y: groundM };
+    const ev = { takeoff: !wasAir && s.airT >= 0, landed: wasAir && s.airT < 0, ground };
+    def.update.call(def, s, s.fx, feet, ev, groundM, now, { hip: { ...hip }, legs: legs.map((l) => ({ ...l })), facing });
+    (def.step ?? stepPuffs)(s.fx, dt);
+    def.draw.call(def, g, s.fx, now, s);
+    g.fillStyle = 'rgba(214,221,226,0.55)';
+    g.font = '12px system-ui';
+    g.fillText(def.pool ? `${s.fx.puffs.length} puffs (pool ${def.pool})` : 'no particles', 8, 16);
+  }
+  // foot trails (where each foot has been: shows how wide the legs open)
+  if (ghost && s.kind !== 'trail') {
+    for (const [i, t] of s.trail.entries()) {
+      g.fillStyle = `rgba(0, 229, 255, ${0.25 * (i / s.trail.length)})`;
+      g.fillRect(t.x * PX - 2, t.y * PX - 2, 4, 4);
+    }
+  }
+  // torso + head (tilt for the waddle), a gun arm
+  const torsoTop = { x: hip.x + facing * Math.sin(tilt + 0.06) * BODY.torso, y: hip.y - Math.cos(tilt) * BODY.torso };
+  g.save();
+  g.shadowColor = CYAN; g.shadowBlur = 10;
+  const back = drawLeg(g, hip, legs[1], facing, '#00a9bd');
+  g.strokeStyle = CYAN; g.lineWidth = BODY.torsoW * PX; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(hip.x * PX, hip.y * PX); g.lineTo(torsoTop.x * PX, torsoTop.y * PX); g.stroke();
+  const front = drawLeg(g, hip, legs[0], facing, CYAN);
+  g.fillStyle = CYAN;
+  g.beginPath(); g.arc(torsoTop.x * PX + facing * 4, (torsoTop.y - BODY.headR) * PX - 4, BODY.headR * PX, 0, TAU); g.fill();
+  // arm + gun pointing ahead
+  const sh = { x: torsoTop.x, y: torsoTop.y + 0.08 };
+  g.lineWidth = BODY.limbW * PX * 0.9;
+  g.beginPath(); g.moveTo(sh.x * PX, sh.y * PX); g.lineTo((sh.x + facing * 0.5) * PX, (sh.y + 0.08) * PX); g.stroke();
+  g.restore();
+  g.fillStyle = '#9aa7b3';
+  g.fillRect(Math.min((sh.x + facing * 0.42) * PX, (sh.x + facing * 0.85) * PX), (sh.y + 0.04) * PX, 0.43 * PX, 7);
+  // eye
+  g.fillStyle = '#05060a';
+  g.beginPath(); g.arc((torsoTop.x + facing * 0.1) * PX + facing * 4, (torsoTop.y - BODY.headR - 0.03) * PX - 4, 3, 0, TAU); g.fill();
+
+  s.trail.push(front, back);
+  if (s.trail.length > 90) s.trail.splice(0, s.trail.length - 90);
+}
+
+const cards = [];
+for (const d of Object.values(WALKS)) cards.push(card(document.getElementById('walks'), d, 'walk'));
+for (const d of Object.values(JUMPS)) cards.push(card(document.getElementById('jumps'), d, 'jump'));
+for (const d of Object.values(TRAILS)) cards.push(card(document.getElementById('trails'), d, 'trail'));
+const amt = document.getElementById('amt');
+const amtOut = document.getElementById('amt-out');
+amt.oninput = () => (amtOut.textContent = `${amt.value}%`);
+const smokeIn = document.getElementById('smoke');
+smokeIn.oninput = () => (document.getElementById('smoke-out').textContent = `${smokeIn.value}%`);
+let last = performance.now();
+function frame(now) {
+  const slow = document.getElementById('slow').checked ? 0.35 : 1;
+  const dt = Math.min(0.05, (now - last) / 1000) * slow;
+  last = now;
+  const k = Number(amt.value) / 100;
+  const ghost = document.getElementById('ghost').checked;
+  for (const s of cards) draw(s, dt, k, ghost);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

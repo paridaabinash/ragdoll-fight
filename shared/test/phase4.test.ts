@@ -187,7 +187,8 @@ describe('client messages', () => {
     expect(parseClientMessage(JSON.stringify({ t: 'hack' }))).toEqual({ error: 'unknown_type' });
   });
   it('join can name a room or ask for a new one; anything else is refused', () => {
-    expect(parseClientMessage(JSON.stringify({ t: 'join', v: 2, name: 'a', room: 'r12' }))).toMatchObject({ t: 'join', room: 'r12' });
+    expect(parseClientMessage(JSON.stringify({ t: 'join', v: 2, name: 'a', room: 'frog' }))).toMatchObject({ t: 'join', room: 'FROG' }); // (M1: room codes; typed in lower case is fine)
+    expect(parseClientMessage(JSON.stringify({ t: 'join', v: 2, name: 'a', room: 'r12' }))).toEqual({ error: 'bad_room' });
     expect(parseClientMessage(JSON.stringify({ t: 'join', v: 2, name: 'a', room: 'new' }))).toMatchObject({ room: 'new' });
     expect(parseClientMessage(JSON.stringify({ t: 'join', v: 2, name: 'a' }))).not.toHaveProperty('room');
     expect(parseClientMessage(JSON.stringify({ t: 'join', v: 2, name: 'a', room: '../x' }))).toEqual({ error: 'bad_room' });

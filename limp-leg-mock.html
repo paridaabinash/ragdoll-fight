@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Limp Leg Options</title>
+<style>
+  :root { --bg: #05060a; --panel: #0b0d14; --text: #d6dde2; --muted: #8a959d; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p { margin: 4px 0 14px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border-radius: 10px; padding: 12px; }
+  .card h2 { font-size: 16px; margin: 0 0 2px; }
+  .card .what { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 6px; background: #080a12; }
+</style>
+</head>
+<body>
+<main>
+<h1>Limp leg: two options</h1>
+<p>A mock-up, not the game: the same character walking across with a dead front leg (the cyan one is you). Walking speed and jump height are the same in both.</p>
+<div class="grid">
+  <div class="card">
+    <h2>A: 1 + 2 + 4 + 5</h2>
+    <div class="what">Lifeless leg swinging like a pendulum · foot dragging (dust, scuffs) · greyed out · sagging, toe down</div>
+    <canvas id="a" width="640" height="360"></canvas>
+  </div>
+  <div class="card">
+    <h2>B: 2 + 6 + 7</h2>
+    <div class="what">Foot dragging (dust, scuffs) · white bandage round the whole leg · deeper hop on the good leg</div>
+    <canvas id="b" width="640" height="360"></canvas>
+  </div>
+</div>
+<script>
+const CYAN = '#00e5ff';
+const GROUND = 300;
+const S = 72; // px per m (big, so the leg reads)
+const darker = (h, k) => { const n = parseInt(h.slice(1), 16); const f = (v) => Math.round(v * k); return 'rgb(' + f(n >> 16) + ',' + f((n >> 8) & 255) + ',' + f(n & 255) + ')'; };
+const greyOf = (h) => { const n = parseInt(h.slice(1), 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; const m = (r + g + b) / 3; const mix = (v) => Math.round(m * 0.75 + v * 0.1); return 'rgb(' + mix(r) + ',' + mix(g) + ',' + mix(b) + ')'; };
+
+function scene(id, opt) {
+  const c = document.getElementById(id), g = c.getContext('2d'), W = c.width, H = c.height;
+  const dust = [], scuffs = [];
+  let lastPuff = 0;
+  const speed = 1.4; // m/s (slowed down for the mock-up, so the leg is easy to watch)
+  function frame(t) {
+    const sec = t / 1000;
+    // background + ground
+    g.fillStyle = '#080a12'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#0b0d16'; g.fillRect(0, GROUND, W, H - GROUND);
+    g.fillStyle = 'rgba(29,233,182,0.55)'; g.fillRect(0, GROUND, W, 2);
+    // the walker: loops across
+    const span = W + 160;
+    const x = ((sec * speed * S) % span) - 80;
+    const hopHz = 1.6;
+    const ph = sec * hopHz * Math.PI * 2;
+    // the hop on the good leg: up as it pushes off, dipping as it lands (deeper in B)
+    const lift = Math.max(0, Math.sin(ph)) * 0.12;
+    const dip = opt.deepHop ? Math.max(0, -Math.sin(ph)) * 0.2 : Math.max(0, -Math.sin(ph)) * 0.07;
+    const hipY = GROUND - (1.0 - dip + lift) * S;
+    const hip = { x, y: hipY };
+    const lean = 0.08 + (opt.deepHop ? 0.06 * Math.max(0, -Math.sin(ph)) : 0);
+    const neck = { x: hip.x + Math.sin(lean) * 0.75 * S, y: hip.y - Math.cos(lean) * 0.75 * S };
+    // good leg (the back leg here): planted, knee bending with the hop
+    const kneeBend = 0.5 + (opt.deepHop ? 0.55 : 0.2) * Math.max(0, -Math.sin(ph));
+    const footG = { x: hip.x + 0.05 * S, y: GROUND };
+    const L = 0.5 * S;
+    const d = Math.hypot(footG.x - hip.x, footG.y - hip.y);
+    const mid = { x: (hip.x + footG.x) / 2, y: (hip.y + footG.y) / 2 };
+    const off = Math.sqrt(Math.max(0, L * L - (d / 2) * (d / 2)));
+    const kneeG = { x: mid.x + off * (0.9 + kneeBend * 0.1), y: mid.y };
+    // the dead leg: trailing behind, foot scraping the ground
+    let thighA, shinA;
+    if (opt.pendulum) {
+      // lifeless: swings with the body's motion (lags, then flops forward), knee floppy either way
+      thighA = 0.55 + 0.35 * Math.sin(ph - 1.6);
+      shinA = thighA - 0.15 + 0.4 * Math.sin(ph * 1.0 - 2.4);
+    } else {
+      thighA = 0.62 + 0.06 * Math.sin(ph);
+      shinA = 0.35;
+    }
+    // angles measured from straight down, + = trailing behind (to the left: walking right)
+    const kneeD = { x: hip.x - Math.sin(thighA) * L, y: hip.y + Math.cos(thighA) * L };
+    let footD = { x: kneeD.x - Math.sin(shinA) * L, y: kneeD.y + Math.cos(shinA) * L };
+    const scraping = footD.y >= GROUND - 2;
+    if (footD.y > GROUND) footD = { x: footD.x, y: GROUND }; // dragged along the ground
+    // dust + scuff marks where the foot scrapes
+    if (scraping && t - lastPuff > 110) {
+      lastPuff = t;
+      for (let i = 0; i < 3; i++) dust.push({ x: footD.x, y: GROUND - 2, vx: -(0.6 + Math.random() * 0.8) * S, vy: -(0.3 + Math.random() * 0.5) * S, r: 2 + Math.random() * 2, born: t });
+      scuffs.push({ x1: footD.x - 8, x2: footD.x + 2, born: t });
+    }
+    for (const s of scuffs) { const a = Math.max(0, 1 - (t - s.born) / 1600); g.strokeStyle = 'rgba(160,170,180,' + (0.35 * a) + ')'; g.lineWidth = 2; g.beginPath(); g.moveTo(s.x1, GROUND + 3); g.lineTo(s.x2, GROUND + 3); g.stroke(); }
+    while (scuffs.length && t - scuffs[0].born > 1600) scuffs.shift();
+    for (const p of dust) { const age = (t - p.born) / 1000; const a = Math.max(0, 1 - age / 0.5); g.fillStyle = 'rgba(120,130,140,' + (0.5 * a) + ')'; g.beginPath(); g.arc(p.x + p.vx * age, p.y + p.vy * age, p.r + age * 6, 0, 7); g.fill(); }
+    while (dust.length && t - dust[0].born > 500) dust.shift();
+
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const stick = (pts, col, w) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(pts[0].x, pts[0].y); for (const p of pts.slice(1)) g.lineTo(p.x, p.y); g.stroke(); };
+    const limbW = 0.14 * S;
+    // back arm (the front arm holds the gun)
+    stick([{ x: neck.x, y: neck.y + 5 }, { x: neck.x - 10, y: neck.y + 22 }, { x: neck.x - 6, y: neck.y + 36 }], darker(CYAN, 0.65), limbW);
+    // good leg (back leg: darker)
+    stick([hip, kneeG, footG], darker(CYAN, 0.65), limbW);
+    // the dead leg (front leg, drawn on top)
+    const deadColor = opt.grey ? greyOf(CYAN) : CYAN;
+    if (opt.sag) {
+      // a sagging noodle: the line bows down between the joints, toe hanging down
+      const sag = (a, b, amt) => { const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + amt }; return [a, m, b]; };
+      g.strokeStyle = deadColor; g.lineWidth = limbW; g.beginPath();
+      g.moveTo(hip.x, hip.y);
+      const s1 = sag(hip, kneeD, 5), s2 = sag(kneeD, footD, 6);
+      g.quadraticCurveTo(s1[1].x, s1[1].y, kneeD.x, kneeD.y);
+      g.quadraticCurveTo(s2[1].x, s2[1].y, footD.x, footD.y);
+      g.stroke();
+      // the toe hangs down
+      stick([footD, { x: footD.x - 3, y: footD.y + (scraping ? 0 : 6) }], deadColor, limbW * 0.8);
+    } else {
+      stick([hip, kneeD, footD], deadColor, limbW);
+    }
+    if (opt.bandage) {
+      // white bandage wraps round the whole leg: thigh and shin
+      const wrap = (a, b, n) => {
+        const len = Math.hypot(b.x - a.x, b.y - a.y), ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+        for (let i = 1; i <= n; i++) {
+          const k = i / (n + 1), cx = a.x + (b.x - a.x) * k, cy = a.y + (b.y - a.y) * k;
+          const px = -uy * limbW * 0.62, py = ux * limbW * 0.62, tilt = 3;
+          g.strokeStyle = '#f5f5f5'; g.lineWidth = 2.6;
+          g.beginPath(); g.moveTo(cx + px - ux * tilt, cy + py - uy * tilt); g.lineTo(cx - px + ux * tilt, cy - py + uy * tilt); g.stroke();
+        }
+      };
+      wrap(hip, kneeD, 3);
+      wrap(kneeD, footD, 3);
+      g.fillStyle = '#f5f5f5'; g.beginPath(); g.arc(kneeD.x, kneeD.y, limbW * 0.55, 0, 7); g.fill(); // the knee wrap
+    }
+    // torso, gun arm + gun, head
+    stick([hip, neck], CYAN, 0.2 * S);
+    const hand = { x: neck.x + 0.55 * S, y: neck.y + 8 };
+    stick([{ x: neck.x, y: neck.y + 5 }, hand], CYAN, limbW);
+    g.save(); g.translate(hand.x, hand.y); g.fillStyle = "#6b7480"; g.fillRect(-8, -8, 52, 14); g.restore();
+    g.fillStyle = CYAN; g.beginPath(); g.arc(neck.x + 2, neck.y - 13, 0.36 * S, 0, 7); g.fill();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+scene('a', { pendulum: true, grey: true, sag: true, bandage: false, deepHop: false });
+scene('b', { pendulum: false, grey: false, sag: false, bandage: true, deepHop: true });
+</script>
+</main>
+</body>
+</html>

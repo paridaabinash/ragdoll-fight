@@ -2,6 +2,10 @@ import Phaser from 'phaser';
 import { ARROW, byteAngle, PICKUP, SPECIAL, TRACER_COLOR, type Pose, type Prop, type SpecialKind, type Vec2 } from '@ragdoll/shared';
 import { floatText, px } from './draw';
 import { drawGun } from './gun-draw';
+import { drawSpecialIcon } from './special-icons';
+
+/** L7: how big a special round's picture is in flight and stuck on something (m). */
+const SPECIAL_ICON_FLYING = 0.5;
 
 /** How each special round looks (placeholder art) and what it's called on screen. */
 export const SPECIAL_LOOK: Record<SpecialKind, { name: string; color: number; letter: string }> = {
@@ -42,12 +46,10 @@ export function drawSpecialArrow(g: Phaser.GameObjects.Graphics, pos: Vec2, angl
     const tail = { x: pos.x - Math.cos(angle) * ARROW.length, y: pos.y - Math.sin(angle) * ARROW.length };
     g.lineStyle(3, TRACER_COLOR, 1).lineBetween(px(tail.x), px(tail.y), px(pos.x), px(pos.y));
   }
-  const x = px(pos.x);
-  const y = px(pos.y);
-  const blink = kind === 'bomb' && !flying && Math.floor(nowMs / 150) % 2 === 0;
-  const r = kind === 'glove' ? 9 : kind === 'balloon' ? 7 : 6;
-  g.fillStyle(blink ? 0xff1744 : look.color, 1).fillCircle(x, y, r).lineStyle(2, 0x000000, 1).strokeCircle(x, y, r);
-  if (kind === 'bomb') g.lineStyle(2, 0x6d4c41, 1).lineBetween(x, y - r, x + 4, y - r - 6);
+  // L7: the same detailed picture as on the gun's muzzle (a flying glove, a bomb, ...), its front at `pos`
+  void look;
+  const size = SPECIAL_ICON_FLYING;
+  drawSpecialIcon(g, kind, { x: pos.x - Math.cos(angle) * 0.8 * size, y: pos.y - Math.sin(angle) * 0.8 * size }, angle, size, 1, nowMs);
 }
 
 /**

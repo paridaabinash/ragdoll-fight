@@ -58,16 +58,22 @@ export interface Tally {
   crownTicks: number;
   /** Times they were pinned to a wall. */
   pinned: number;
+  /** L7: legs they lost (shot down to stumps). */
+  limbsLost: number;
+  /** L7: ticks alive on at least one stump. */
+  stumpTicks: number;
 }
-export const newTally = (): Tally => ({ splats: 0, selfOwns: 0, longestShot: 0, crownTicks: 0, pinned: 0 });
+export const newTally = (): Tally => ({ splats: 0, selfOwns: 0, longestShot: 0, crownTicks: 0, pinned: 0, limbsLost: 0, stumpTicks: 0 });
 
-export type AwardKind = 'most_splats' | 'biggest_self_own' | 'longest_shot' | 'crown_holder' | 'most_pinned';
+export type AwardKind = 'most_splats' | 'biggest_self_own' | 'longest_shot' | 'crown_holder' | 'most_pinned' | 'flesh_wound' | 'most_limbs_lost';
 export const AWARD_NAMES: Record<AwardKind, string> = {
   most_splats: 'Most Splats',
   biggest_self_own: 'Biggest Self-Own',
   longest_shot: 'Longest Shot',
   crown_holder: 'Crown Holder',
   most_pinned: 'Most Pinned',
+  flesh_wound: 'Flesh Wound',
+  most_limbs_lost: 'Most Limbs Lost',
 };
 export interface Award {
   kind: AwardKind;
@@ -93,6 +99,9 @@ export function pickAwards(tallies: Map<string, Tally>, order: string[]): Award[
   best('longest_shot', (t) => t.longestShot);
   best('crown_holder', (t) => t.crownTicks / 60);
   best('most_pinned', (t) => t.pinned);
+  // L7: the longest alive on a stump (seconds), and the most legs lost
+  best('flesh_wound', (t) => t.stumpTicks / 60);
+  best('most_limbs_lost', (t) => t.limbsLost);
   return out;
 }
 
@@ -100,6 +109,7 @@ export function pickAwards(tallies: Map<string, Tally>, order: string[]): Award[
 export const EXCITEMENT: Record<string, number> = {
   shattered: 45,
   disarmed: 30,
+  leg_off: 28,
   double_kill: 40,
   ring_out: 35,
   revenge: 30,

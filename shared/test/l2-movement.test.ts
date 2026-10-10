@@ -55,11 +55,15 @@ describe('L2 movement feel', () => {
     const offEdge = (late: number) => {
       const { w, p, log, hold } = world(47, true);
       w.setControls('p1', { ...NO_CONTROLS, move: 1 });
-      for (let i = 0; i < 240 && !(p.center().x > 50.3 && !p.grounded); i++) w.step();
+      // (funny legs: the long stride's trailing foot can touch the block again after both feet first lift, so "walked
+      // off" = every foot past the edge, in the air)
+      for (let i = 0; i < 240 && !(p.center().x > 50.3 && !p.grounded && p.footPoints().every((f) => f.x > 50.02)); i++) w.step();
       hold({ move: 1 }, late - 1);
       const mark = log.length;
       hold({ move: 1, jump: true }, 20);
-      const jump = log.slice(mark).find((e) => e.ev === 'jump');
+      // (only a mid-air jump off the edge counts: a later press is kept a few ticks (the jump buffer) and may fire on
+      // landing on the floor below, which is the buffer, not coyote time)
+      const jump = log.slice(mark).find((e) => e.ev === 'jump' && e.coyote !== undefined);
       w.dispose();
       return jump;
     };

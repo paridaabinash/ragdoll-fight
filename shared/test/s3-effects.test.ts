@@ -141,6 +141,7 @@ describe('hit effects in the world', () => {
     // (L4: a leg hit climbs the lasting leg ladder; the head and arms still get short effects)
     world.effects.get(DUMMY_PLAYER)!.add('arm', 'armFrontUpper', world.tick);
     for (let i = 0; i < 30; i++) world.step();
+    world.playerStats(DUMMY_PLAYER).health = 50; // (L7: a headshot does 50, so this one kills)
     shootUntilDone(world, aimAt(world, (l) => l === `${DUMMY_PLAYER}:head`)); // headshot: dead
     expect(log.findLast((e) => e.ev === 'arrow_hit')?.target).toBe(`${DUMMY_PLAYER}:head`);
     expect(world.playerStats(DUMMY_PLAYER).alive).toBe(false);
@@ -173,7 +174,7 @@ describe('hit effects in the world', () => {
     fx.add('head', 'head', world.tick);
     world.bodyHit(LOCAL_PLAYER, 'legBackLower', 1, 'test'); // 2nd: the FIRST leg hit drags
     world.step();
-    expect(world.player(LOCAL_PLAYER).mods).toEqual({ headHeavy: true, armFlail: false, dragLeg: 'front', oiled: false, laughing: false, floatLeg: null, beltSpeed: 0, pinned: false, armsDown: false, swing: null, limpArms: [], fast: false });
+    expect(world.player(LOCAL_PLAYER).mods).toEqual({ headHeavy: true, armFlail: false, dragLeg: 'front', oiled: false, laughing: false, floatLeg: null, beltSpeed: 0, pinned: false, armsDown: false, swing: null, limpArms: [], fast: false, flinch: false, swingSettle: false, floating: false });
     for (let i = 0; i < 60; i++) world.step();
     world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, jump: true });
     world.step();
@@ -187,7 +188,7 @@ describe('hit effects in the world', () => {
   it('no effects = the normal body (no mods)', () => {
     const { world } = makeWorld();
     world.step();
-    expect(world.player(DUMMY_PLAYER).mods).toEqual({ headHeavy: false, armFlail: false, dragLeg: null, oiled: false, laughing: false, floatLeg: null, beltSpeed: 0, pinned: false, armsDown: false, swing: null, limpArms: [], fast: false });
+    expect(world.player(DUMMY_PLAYER).mods).toEqual({ headHeavy: false, armFlail: false, dragLeg: null, oiled: false, laughing: false, floatLeg: null, beltSpeed: 0, pinned: false, armsDown: false, swing: null, limpArms: [], fast: false, flinch: false, swingSettle: false, floating: false });
     world.dispose();
   });
 });

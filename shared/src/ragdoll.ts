@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier2d-compat';
 import type { Aim } from './aim';
-import { ARM_REACH, BALANCE, DT, EFFECT_BODY, FALL, GUN, HAZARD, LIMB, MELEE, LIMIT_CHECK, MOTOR, MOVE, RAGDOLL, SOLVER_ITERATIONS, SPECIAL, STAMINA, STUMBLE, TRIP, WALK } from './constants';
+import { ARM_REACH, BALANCE, DT, EFFECT_BODY, FALL, GUN, HAZARD, HIT_REACTION, LEGS, LIMB, MELEE, LIMIT_CHECK, MOTOR, MOVE, RAGDOLL, SOLVER_ITERATIONS, SPECIAL, STUMBLE, TRIP, WALK } from './constants';
 import type { Logger } from './log';
 import { add, clamp, dist, r2, r3, rotate, rv, scale, sub, vec, wrapAngle, type Vec2 } from './math';
 
@@ -70,6 +70,8 @@ export interface BodyMods {
   laughing: boolean;
   /** A balloon tied to this leg (S5): it goes slack so the balloon can float it up (hop on the other foot). */
   floatLeg: 'front' | 'back' | null;
+  /** L7: a balloon on the torso/head holds the body up: off the ground it runs and paddles in the air (swimming). */
+  floating: boolean;
   /** Standing on a conveyor belt moving at this speed (S6): walking is relative to the belt; standing still rides it. */
   beltSpeed: number;
   /** A limb pinned to a wall (S5): you can barely walk away from it (mash jump to break free). */
@@ -78,12 +80,16 @@ export interface BodyMods {
   armsDown: boolean;
   /** L5: a melee swing in progress: the arms follow this angle (the body doesn't turn to it). null = no swing. */
   swing: number | null;
+  /** L7: just hit by a bullet: walking and air control push weakly for a moment, so the knock shows. */
+  flinch: boolean;
+  /** L7: a melee swing just ended: the weapon arm is let go (damped), so the weapon swings on and settles. */
+  swingSettle: boolean;
   /** L5: arms broken by melee hits: they hang loose (shots still come from the shoulder: you can always fight back). */
   limpArms: Side[];
   /** L5: a melee player (gun knocked away) runs MELEE.runFactor faster. */
   fast: boolean;
 }
-export const NO_MODS: BodyMods = { headHeavy: false, armFlail: false, dragLeg: null, oiled: false, laughing: false, floatLeg: null, beltSpeed: 0, pinned: false, armsDown: false, swing: null, limpArms: [], fast: false };
+export const NO_MODS: BodyMods = { headHeavy: false, armFlail: false, dragLeg: null, oiled: false, laughing: false, floatLeg: null, beltSpeed: 0, pinned: false, armsDown: false, swing: null, limpArms: [], fast: false, flinch: false, swingSettle: false, floating: false };
 
 /** What a ragdoll needs from the world it lives in. */
 export interface RagdollHost {
@@ -97,8 +103,6 @@ export interface RagdollHost {
   /** One-tick push / turning push. Ragdoll bodies ignore Rapier's direct impulses, so always use these. */
   push(body: RAPIER.RigidBody, impulse: Vec2, point?: Vec2): void;
   twist(body: RAPIER.RigidBody, torqueImpulse: number): void;
-  /** Spends stamina for an action; false if there isn't enough. */
-  spendStamina(id: string, amount: number): boolean;
   /**
    * A part was shot off (L0/L4): it's a loose piece now, no longer the player's body. Hits on it must not hurt them,
    * and it keeps lying around (relabelled `label`) until the player respawns.
@@ -149,9 +153,10 @@ const JOINTS: Record<JointName, JointSpec> = {
   elbowFront: { parent: 'armFrontUpper', child: 'armFrontLower', at: vec(0, elbowY), limits: [-2.5, 0.05] },
   shoulderBack: { parent: 'torso', child: 'armBackUpper', at: vec(0, shoulderY), limits: null },
   elbowBack: { parent: 'armBackUpper', child: 'armBackLower', at: vec(0, elbowY), limits: [-2.5, 0.05] },
-  hipFront: { parent: 'torso', child: 'legFrontUpper', at: vec(0, hipY), limits: [-1.9, 0.7] },
+  // (funny legs: the hips bend back to 1.2 rad, was 0.7: the Big Scissor's trailing leg and the Split Leap's back leg)
+  hipFront: { parent: 'torso', child: 'legFrontUpper', at: vec(0, hipY), limits: [-1.9, 1.2] },
   kneeFront: { parent: 'legFrontUpper', child: 'legFrontLower', at: vec(0, kneeY), limits: [0, 2.5] },
-  hipBack: { parent: 'torso', child: 'legBackUpper', at: vec(0, hipY), limits: [-1.9, 0.7] },
+  hipBack: { parent: 'torso', child: 'legBackUpper', at: vec(0, hipY), limits: [-1.9, 1.2] },
   kneeBack: { parent: 'legBackUpper', child: 'legBackLower', at: vec(0, kneeY), limits: [0, 2.5] },
 };
 const JOINT_NAMES = Object.keys(JOINTS) as JointName[];
@@ -228,6 +233,8 @@ export class Ragdoll {
   /** Legs shot down to a thigh stump. */
   readonly stumps = new Set<Side>();
   private lastHopTick = -Infinity;
+  /** L7: ticks between hops right now (for the limp's knee dip). */
+  private hopEvery = 0;
   /** L4: the leg being dragged right now (from `mods.dragLeg`), or null. */
   private dragging: Side | null = null;
   /** Hops so far (one leg left), for reports. */
@@ -255,7 +262,8 @@ export class Ragdoll {
   /** Balance-off time of the current knock (a trip, or longer for a glove/bomb/oil slide). */
   private offTicks: number = TRIP.offTicks;
   /** Catching a forward tip with a few quick steps: direction and until when. */
-  private stumble: { dir: -1 | 1; until: number } | null = null;
+  /** A stumble: the legs step by themselves toward `dir` (L7: a melee stagger sets its own speed and a lean back). */
+  private stumble: { dir: -1 | 1; until: number; speed?: number; lean?: number } | null = null;
   private lastStumbleEnd = -Infinity;
   private flailPhase = 0;
   /** L3: where the gun arm points this tick (the aim, or straight ahead), or null while the arms hang. */
@@ -287,7 +295,20 @@ export class Ragdoll {
   private downSince = 0;
   /** L6: since when the body has been down with full balance (null while up or knocked). */
   private tryingSince: number | null = null;
-  private air: { since: number; startY: number; peakY: number } | null = null;
+  private air: { since: number; startY: number; peakY: number; fall: number; apexAt: number | null } | null = null;
+  /** Funny legs: how much of the Big Scissor swing is on (0..1, blended; see drivePose). */
+  private scissor = 0;
+  /** L7: where the air-swimming stroke is (rad). */
+  private swimPhase = 0;
+  /** L7: ticks off the ground but not moving (hung on something): long enough and a jump is allowed. */
+  private stillAirTicks = 0;
+  /** L7: the last landing: when, and how deep the knees sink (rad) before springing back. */
+  private landing: { at: number; sink: number } | null = null;
+
+  /** L7: how long this body has been off the ground (ticks; 0 on the ground). */
+  airTicks(tick: number): number {
+    return this.air ? tick - this.air.since : 0;
+  }
   /** Ticks in a row each joint has been past its limit. */
   private readonly overTicks = new Map<JointName, number>();
   private readonly gapTicks = new Map<JointName, number>();
@@ -409,11 +430,16 @@ export class Ragdoll {
    * Shoots a leg down to a thigh stump: the knee is cut, the shin falls off as a loose piece, and the thigh keeps only
    * its hip end (no knee, no shin). Returns false if that leg already is one.
    */
-  stumpLeg(side: Side): boolean {
+  stumpLeg(side: Side, dirX = -this.facing): boolean {
     if (this.stumps.has(side)) return false;
     const leg = LEG[side];
     this.cutJoints([leg.knee]);
     this.release(leg.lower);
+    // L7: the shin flies off along the bullet in a big spinning arc (on top of release's small tumble)
+    const shin = this.parts[leg.lower];
+    const dir = Math.sign(dirX) || -this.facing;
+    this.host.push(shin, { x: dir * LIMB.lostLeg.along * shin.mass(), y: -LIMB.lostLeg.up * shin.mass() });
+    this.host.twist(shin, dir * LIMB.lostLeg.spin * shin.principalInertia());
     const thigh = this.colliders[leg.upper];
     thigh.setHalfExtents({ x: upperLeg.hx, y: STUMP_HALF });
     // the thigh's body stays where it was (its joint to the hip doesn't move); only its shape shrinks toward the hip
@@ -539,6 +565,8 @@ export class Ragdoll {
 
   /** Torso angle the balance aims for: lean into the walk, into the slide while braking, forward while crouching. */
   private leanTarget(c: Controls): number {
+    // L7: staggering back from a melee hit: the torso leans back, the way the hit pushed (the legs step under it)
+    if (this.stumble?.lean) return this.stumble.lean * this.stumble.dir;
     if (c.crouch) return BALANCE.crouchLean * this.facing;
     // Directions come from what the player does (walk key, or the way they were going when the brake began), not from
     // the measured speed: its sign flips around zero during a stop and made the lean rock back and forth.
@@ -632,6 +660,19 @@ export class Ragdoll {
     this.host.log.info('stun', { id: this.id, cause, ticks });
   }
 
+  /**
+   * L7: a melee hit on the body or head: the body staggers back 2-3 quick steps away from the hit (`dirX`), leaning
+   * back, facing kept, then catches its balance (the stumble ends with a brake). Not when down, limp or in the air.
+   */
+  staggerBack(tick: number, dirX: number, cause: string): void {
+    if (this.limp || this.down || !this.grounded) return;
+    const dir = (Math.sign(dirX) || -this.facing) as -1 | 1;
+    const S = MELEE.stagger;
+    this.braking = false;
+    this.stumble = { dir, until: tick + S.ticks, speed: S.speed * (this.standingLegs < 2 ? 0.5 : 1), lean: S.lean };
+    this.host.log.info('stagger', { id: this.id, cause, dir, ticks: S.ticks });
+  }
+
   trip(tick: number, cause: string, dirX: number): void {
     this.trippedAt = tick;
     this.offTicks = TRIP.offTicks;
@@ -678,13 +719,18 @@ export class Ragdoll {
     this.updateAimBlocked(this.gunAim);
     // A stumble walks the legs by itself (facing stays as it is: you stumble, you don't turn round).
     const s = this.stumble;
-    this.driveWalk(tick, s ? { ...c, move: s.dir } : c, s ? STUMBLE.speed / WALK.speed : 1);
-    this.drivePose(c);
+    this.driveWalk(tick, s ? { ...c, move: s.dir } : c, s ? (s.speed ?? STUMBLE.speed) / WALK.speed : 1);
+    this.drivePose(c, tick);
     this.driveShoulder('shoulderFront', this.gunAim);
     this.driveShoulder('shoulderBack', this.gunAim);
     this.driveBalance(c);
     if (this.mods.headHeavy) this.host.push(this.parts.head, { x: 0, y: EFFECT_BODY.headExtraWeight * DT });
     this.flailPhase = (this.flailPhase + EFFECT_BODY.flailSpeed * DT) % (2 * Math.PI);
+    // L7: swimming in the air (floating on a balloon): faster strokes while a key is held
+    if (this.mods.floating && !this.grounded) {
+      const hz = c.move !== 0 || c.jump || c.crouch ? SPECIAL.balloon.swimHz : SPECIAL.balloon.idleHz;
+      this.swimPhase = (this.swimPhase + 2 * Math.PI * hz * DT) % (2 * Math.PI);
+    }
     if (!this.gunAim) this.dragArms();
     this.handleJump(tick, c);
   }
@@ -694,6 +740,13 @@ export class Ragdoll {
    * that way to get the feet back under the body. A shared reaction (heavy head, hard stops, landings).
    */
   private updateStumble(tick: number, c: Controls): void {
+    // L7: a stagger whose back hits a wall or a step's face ends there (the legs used to keep walking into it for the
+    // rest of the 0.7 s, running on the spot): once a few ticks in, pressed against something that way and not moving
+    const st = this.stumble;
+    if (st?.lean && tick >= st.until - MELEE.stagger.ticks + 6 && Math.sign(this.speedX()) !== st.dir && (this.pressedToward('torso', st.dir) || Math.abs(this.speedX()) < 0.3)) {
+      this.host.log.info('stagger_bumped', { id: this.id, dir: st.dir, ticksLeft: st.until - tick });
+      st.until = tick;
+    }
     if (this.stumble && tick >= this.stumble.until) {
       this.stumble = null;
       this.lastStumbleEnd = tick;
@@ -727,12 +780,22 @@ export class Ragdoll {
     this.tryingSince = this.down && this.balance >= 1 ? (this.tryingSince ?? tick) : null;
 
     const y = torsoBody.translation().y;
+    const tv = torsoBody.linvel();
+    this.stillAirTicks = !this.grounded && Math.hypot(tv.x, tv.y) < MOVE.unstickSpeed ? this.stillAirTicks + 1 : 0;
     if (!this.grounded) {
-      if (!this.air) this.air = { since: tick, startY: y, peakY: y };
-      else this.air.peakY = Math.min(this.air.peakY, y);
+      const vy = torsoBody.linvel().y;
+      if (!this.air) this.air = { since: tick, startY: y, peakY: y, fall: Math.max(0, vy), apexAt: vy >= 0 ? tick : null };
+      else {
+        this.air.peakY = Math.min(this.air.peakY, y);
+        this.air.fall = Math.max(this.air.fall, vy);
+        if (this.air.apexAt === null && vy >= 0) this.air.apexAt = tick;
+      }
     } else if (this.air) {
       const airTicks = tick - this.air.since;
-      if (airTicks > 5) this.host.log.info('land', { id: this.id, airTicks, rise: r3(this.air.startY - this.air.peakY), tilt: r2(tilt) });
+      // L7: the knees sink by how hard it landed, then spring back (see drivePose)
+      const sink = Math.min(LEGS.sinkMax, this.air.fall * LEGS.sinkPerSpeed);
+      if (airTicks > 5) this.landing = { at: tick, sink };
+      if (airTicks > 5) this.host.log.info('land', { id: this.id, airTicks, rise: r3(this.air.startY - this.air.peakY), tilt: r2(tilt), fall: r2(this.air.fall), sink: r2(sink) });
       this.air = null;
     }
 
@@ -947,7 +1010,14 @@ export class Ragdoll {
   private driveWalk(tick: number, c: Controls, speedScale = 1): void {
     const vx = this.speedX();
     if (c.move !== 0) this.braking = false;
-    if (this.braking && (Math.abs(vx) < 0.05 || !this.grounded || this.balance < 1)) this.braking = false;
+    // Funny legs: the wide stride bounds (both feet off the ground 25-45% of a run). A stop let go in such a bound used
+    // to be cancelled at once (in the air), so the body glided on at full speed and stumbled (sim feel_report: 1.07 s /
+    // 3.18 m). Now a stop let go in the air without a jump (a bound, a small drop) waits and brakes on landing, up to
+    // WALK.brakeWaitTicks in the air (it brakes in the air too, at the air-control rate: waiting a whole bound to brake
+    // left 2.4 m/s after 0.25 s, tests l2-movement / phase3 walking); a jump keeps its momentum as before.
+    const jumpedThisAir = this.lastJumpTick >= this.lastGroundTick;
+    const cancelInAir = !this.grounded && (jumpedThisAir || tick - this.lastGroundTick > WALK.brakeWaitTicks);
+    if (this.braking && (Math.abs(vx) < 0.05 || cancelInAir || this.balance < 1)) this.braking = false;
     const scrambling = this.updateOilScramble(tick, c);
     // On a conveyor the floor itself moves: walking is relative to it, and standing still means riding along.
     const belt = this.grounded ? this.mods.beltSpeed : 0;
@@ -959,7 +1029,7 @@ export class Ragdoll {
       const target = c.move * WALK.speed * speedScale * stumpy * wobbly * (c.crouch ? WALK.crouchFactor : 1) + belt;
       const riding = belt && c.move === 0 && !this.braking;
       // pinned: walking only strains against the pin (L2: the stronger walk pulled a pinned knee 0.26 rad backward)
-      const strain = this.mods.pinned ? EFFECT_BODY.pinnedWalk : 1;
+      const strain = (this.mods.pinned ? EFFECT_BODY.pinnedWalk : 1) * (this.mods.flinch ? HIT_REACTION.flinchControl : 1);
       const accel = (riding ? HAZARD.conveyor.accel : this.braking ? WALK.brake : WALK.accel) * (this.grounded ? 1 : WALK.airControl) * this.balance * strain;
       const dv = clamp(target - vx, -accel * DT, accel * DT);
       // In the air, pushing the torso into a wall it already presses against moves nothing; it only presses harder, and
@@ -1015,6 +1085,7 @@ export class Ragdoll {
   private hop(tick: number, c: Controls, vx: number): void {
     if (this.standingLegs !== 1 || !this.grounded || c.move === 0 || this.balance < 1) return;
     const every = Math.round(LIMB.hopStride / Math.max(Math.abs(vx), 1) / DT);
+    this.hopEvery = every;
     if (tick - this.lastHopTick < every) return;
     this.lastHopTick = tick;
     this.hops++;
@@ -1077,7 +1148,7 @@ export class Ragdoll {
     }
   }
 
-  private drivePose(c: Controls): void {
+  private drivePose(c: Controls, tick: number): void {
     // L6: while down (fallen), the legs tuck in: the body gets short enough to rise even when it lies wedged between
     // two walls. Straight legs made it a strut there: the unlimited hip motors pressed the head into one wall and the
     // feet into the other with ~1500 N, and friction held it down for good (sim `pocket`).
@@ -1085,8 +1156,16 @@ export class Ragdoll {
     const legStrength = Math.max(MOTOR.minLegStrength, this.balance);
     const drag = this.dragging;
     // Stepping: legs swing in opposite directions, and each knee lifts during its half of the cycle.
-    const swing = this.gait * WALK.hipSwing * Math.sin(this.gaitPhase);
+    // Big Scissor: only while running on purpose (the run key held, not braking), blended in and out over
+    // WALK.scissorBlend s. Kept on through a stop, the wide swing tripped the body (stop 0.17 s / 0.4 m -> 1.07 s /
+    // 3.18 m and a stumble, sim feel_report).
+    // (let go = fade out at once, even in the air; holding run in the air keeps it as it was)
+    const scissorOn = c.move === 0 || this.braking ? 0 : this.grounded ? 1 : this.scissor;
+    this.scissor += Math.sign(scissorOn - this.scissor) * Math.min(Math.abs(scissorOn - this.scissor), DT / WALK.scissorBlend);
+    const swing = this.gait * (WALK.hipSwing + WALK.scissorSwing * this.scissor) * Math.sin(this.gaitPhase);
     const lift = this.gait * WALK.kneeLift;
+    // the leg that's far behind bends its knee, so its heel flicks up (front leg behind: sin < 0)
+    const flick = (behind: number) => (this.scissor * this.gait * WALK.heelFlick * Math.max(0, behind - WALK.heelFlickFrom)) / (1 - WALK.heelFlickFrom);
     // Standing in oil: the legs slowly slide apart into a split (the one place the legs get different targets on
     // purpose: the split is the joke), until the body collapses.
     const splitting = this.mods.oiled && this.grounded && c.move === 0 && !this.oilScramble;
@@ -1094,9 +1173,64 @@ export class Ragdoll {
     const step: Partial<Record<PoseJoint, number>> = {
       hipFront: -swing - this.oilSplit,
       hipBack: swing + this.oilSplit,
-      kneeFront: lift * Math.max(0, Math.cos(this.gaitPhase)),
-      kneeBack: lift * Math.max(0, -Math.cos(this.gaitPhase)),
+      kneeFront: lift * Math.max(0, Math.cos(this.gaitPhase)) + flick(-Math.sin(this.gaitPhase)),
+      kneeBack: lift * Math.max(0, -Math.cos(this.gaitPhase)) + flick(Math.sin(this.gaitPhase)),
     };
+    // L7 swimming in the air (a balloon on the torso, off the ground): the legs run in big strides, knees bending as
+    // each comes forward, like running on air
+    if (this.mods.floating && !this.grounded) {
+      const ph = this.swimPhase;
+      step.hipFront = -0.75 * Math.sin(ph) - pose.hipFront;
+      step.hipBack = 0.75 * Math.sin(ph) - pose.hipBack;
+      step.kneeFront = 0.5 + 0.6 * Math.max(0, Math.cos(ph)) - pose.kneeFront;
+      step.kneeBack = 0.5 + 0.6 * Math.max(0, -Math.cos(ph)) - pose.kneeBack;
+    }
+    // L7 springy legs (two whole legs, not crouched / down / oiled / tied to a balloon): a loose swing leg while running,
+    // a tuck then dangling legs in the air, knees that sink on landing and spring back. `share` scales a leg's strength.
+    const share = { Front: 1, Back: 1 };
+    // (not with a heavy, floppy head: loose legs under it fell over, sim head_sway)
+    const springy = this.standingLegs === 2 && !drag && !this.down && !c.crouch && !splitting && !this.oilScramble && !this.mods.floatLeg && !this.mods.headHeavy && !this.mods.floating;
+    if (springy && !this.grounded && this.air) {
+      // falling slowly (around the top of a jump) the legs open into the splits; falling faster, they reach down under the body
+      // to catch it (landing on still-dangling, bent legs took ~1 s to straighten under the body's weight)
+      const vy = this.parts.torso.linvel().y;
+      const falling = vy > LEGS.reachFall;
+      if (vy < 0) {
+        // rising: the legs as they are (jumps climb and cross gaps exactly as before: tucking or dangling on the way
+        // up cut the standing climb 1.4 -> 1.3 m, which the arenas' reach check relies on)
+      } else if (!falling && this.air.apexAt !== null && tick - this.air.apexAt < LEGS.dangleTicks && (this.lastJumpTick >= this.air.since - LEGS.splitAfterJumpTicks || (c.move !== 0 && this.scissor > 0.5))) {
+        // (only after a jump (a coyote one too) or in a running bound (the run key held): those leaps are the joke. A
+        // body just dropped keeps its legs as they are: the splits there put a foot on the ledge beside a slot it was
+        // dropping into, test l7-unstuck)
+        // (only just after the top: a body stuck against a step's face, neither rising nor falling, kept its legs
+        // dangling and could never stand again: sim step_climb)
+        // Split Leap: the front leg forward, the back leg back (in the air the legs aren't a closed loop through the
+        // ground, so different targets per leg are fine here)
+        const sp = LEGS.split;
+        step.hipFront = -sp.hip - pose.hipFront;
+        step.hipBack = sp.hip - pose.hipBack;
+        step.kneeFront = sp.knee - pose.kneeFront;
+        step.kneeBack = sp.knee - pose.kneeBack;
+        share.Front = share.Back = sp.share;
+      } else if (falling) share.Front = share.Back = LEGS.reachShare;
+    } else if (springy && this.grounded) {
+      // the lifting (swing) leg is loose while running: it lags and overshoots (only while the run key is held: loose
+      // while braking, the body kept rocking after a stop)
+      if (this.gait > 0.3 && c.move !== 0 && !this.braking) {
+        if (Math.cos(this.gaitPhase) > 0) share.Front = LEGS.swingShare;
+        else share.Back = LEGS.swingShare;
+      }
+      // landing: knees sink by the landing speed, then spring back (the hips fold half as much: the body drops straight)
+      const since = this.landing ? tick - this.landing.at : Infinity;
+      if (this.landing && since < LEGS.landTicks) {
+        const k = this.landing.sink * (1 - since / LEGS.landTicks);
+        step.kneeFront = (step.kneeFront ?? 0) + k;
+        step.kneeBack = (step.kneeBack ?? 0) + k;
+        step.hipFront = (step.hipFront ?? 0) - k / 2;
+        step.hipBack = (step.hipBack ?? 0) - k / 2;
+        share.Front = share.Back = LEGS.landShare; // (both legs catch the landing: no loose swing leg now)
+      }
+    }
     if (this.standingLegs === 1) {
       // Hopping on the one good leg: it points straight down in the world (not along the torso), so the foot is always
       // under the body's weight. With two legs a lean is caught by stepping; one leg can't step, and planted behind a
@@ -1110,6 +1244,13 @@ export class Ragdoll {
       const k = LIMB.oneLegKnee;
       step[hip] = -k / 2 - this.parts.torso.rotation() * this.facing - pose[hip];
       step[knee] = k - pose[knee] + (this.grounded ? 0 : 0.6 * this.gait);
+      // L7 limping on a dragged leg: the good knee dips deeper between hops (deepest midway), up again for the push
+      if (drag && this.grounded && this.gait > 0.3 && this.hopEvery > 0) {
+        const t = Math.min(1, (tick - this.lastHopTick) / this.hopEvery);
+        const dip = LIMB.hopDip * Math.sin(Math.PI * t);
+        step[knee] = (step[knee] ?? 0) + dip;
+        step[hip] = (step[hip] ?? 0) - dip / 2;
+      }
       // The stump is held up and forward, out of the way: left hanging, it props the body up like a third leg once it
       // sinks a little (mid-walk loss: stuck leaning forward on stump + bent knee, head 0.3 m low).
       const otherHip = good === 'front' ? 'hipBack' : 'hipFront';
@@ -1137,7 +1278,8 @@ export class Ragdoll {
       // Spaghetti arms: elbows only hold while the arms are up.
       const brokenArm = (name === 'elbowFront' && this.mods.limpArms.includes('front')) || (name === 'elbowBack' && this.mods.limpArms.includes('back'));
       const limpElbow = name.startsWith('elbow') && (!gun || brokenArm) ? MOTOR.armLimp.elbowStrength : 1;
-      const strength = (isLeg ? legStrength * weakLeg * slackLeg : 1) * floppyNeck * limpElbow;
+      const springShare = isLeg ? share[name.endsWith('Front') ? 'Front' : 'Back'] : 1;
+      const strength = (isLeg ? legStrength * weakLeg * slackLeg * springShare : 1) * floppyNeck * limpElbow;
       this.joints[name].configureMotorPosition(target * this.facing, m.stiffness * strength, m.damping * strength);
     }
   }
@@ -1148,6 +1290,10 @@ export class Ragdoll {
    */
   private driveShoulder(name: 'shoulderFront' | 'shoulderBack', aim: Aim | null): void {
     const arm = this.parts[JOINTS[name].child];
+    if (this.mods.swingSettle && name === 'shoulderFront') {
+      this.joints[name].configureMotorVelocity(0, MOTOR.swingSettleFactor);
+      return;
+    }
     if (this.mods.limpArms.includes(name === 'shoulderFront' ? 'front' : 'back')) {
       // L5: broken by a melee hit: it hangs loose (the motor only damps a little, like a spaghetti arm)
       this.joints[name].configureMotorVelocity(0, MOTOR.armLimp.shoulderFactor);
@@ -1165,6 +1311,12 @@ export class Ragdoll {
       this.joints[name].configureMotorVelocity(clamp(MOTOR.shoulderAim.gain * err, -MOTOR.shoulderAim.maxSpeed, MOTOR.shoulderAim.maxSpeed), MOTOR.shoulderIdle.factor);
       return;
     }
+    // L7 swimming in the air: the back arm paddles round (the gun arm keeps aiming)
+    if (this.mods.floating && !this.grounded && name === 'shoulderBack') {
+      const hz = this.controls.move !== 0 || this.controls.jump || this.controls.crouch ? SPECIAL.balloon.swimHz : SPECIAL.balloon.idleHz;
+      this.joints[name].configureMotorVelocity(-2 * Math.PI * hz * this.facing, MOTOR.shoulderIdle.factor);
+      return;
+    }
     // Hit in an arm: the back arm windmills while walking (the gun arm keeps aiming, with the swing); laughing: both.
     const flail = (this.mods.armFlail && this.gait > 0.2 && (name === 'shoulderBack' || !raise)) || this.mods.laughing;
     if (flail) {
@@ -1179,7 +1331,7 @@ export class Ragdoll {
     }
     // An arm hanging straight down has rotation 0, so pointing along angle θ needs rotation θ - PI/2.
     const err = wrapAngle(raise.angle - Math.PI / 2 - arm.rotation());
-    const m = MOTOR.shoulderAim;
+    const m = this.mods.swing !== null ? MOTOR.shoulderSwing : MOTOR.shoulderAim;
     this.joints[name].configureMotorVelocity(clamp(m.gain * err, -m.maxSpeed, m.maxSpeed), m.factor);
   }
 
@@ -1222,7 +1374,12 @@ export class Ragdoll {
     // a press not used yet and still fresh
     if (this.jumpPressedAt <= this.lastJumpTick || tick - this.jumpPressedAt > MOVE.bufferTicks) return;
     const coyote = !this.grounded && tick - this.lastGroundTick <= MOVE.coyoteTicks && this.lastGroundTick > this.lastJumpTick;
-    if (!this.grounded && !coyote) {
+    // L7: hung still in the air on something (the torso caught on a ledge's corner, the feet in the air) for
+    // MOVE.unstickTicks: that's resting on it, so it can jump off. Only the feet count as ground, so a body hung on a
+    // corner could never jump again (sim arena_fights: bots stuck on Windy Rooftop's water tower corner).
+    const hung = !this.grounded && this.stillAirTicks >= MOVE.unstickTicks && !this.mods.floating;
+    if (hung && pressed) this.host.log.info('jump_unstuck', { id: this.id, stillTicks: this.stillAirTicks, at: rv(this.center()) });
+    if (!this.grounded && !coyote && !hung) {
       if (pressed) this.host.log.info('jump_blocked', { id: this.id, reason: 'in_air', buffered: true });
       return; // stays buffered for a few ticks, in case the feet land
     }
@@ -1230,16 +1387,14 @@ export class Ragdoll {
       if (pressed) this.host.log.info('jump_blocked', { id: this.id, reason: 'cooldown' });
       return;
     }
-    if (!this.host.spendStamina(this.id, STAMINA.jumpCost)) {
-      this.host.log.info('jump_blocked', { id: this.id, reason: 'stamina' });
-      this.jumpPressedAt = -Infinity;
-      return;
-    }
+    // (L7: jumps are free: stamina is for weapons only)
     this.lastJumpTick = tick;
     this.jumpCut = false;
     const jumpSpeed = MOVE.jumpSpeed * (this.legsLeft === 0 ? LIMB.stumpsJump : 1);
-    // (any falling speed is cancelled first: a buffered jump fires on the landing tick, a coyote jump while dropping)
-    for (const b of this.attached()) this.host.push(b, { x: 0, y: -(jumpSpeed + Math.max(0, b.linvel().y)) * b.mass() });
+    // Every part leaves at exactly the jump speed: falling speed is cancelled (a buffered jump fires on the landing tick,
+    // a coyote jump while dropping) and so is rising speed (funny legs: a running bound already moving up added to the
+    // jump: running jumps rose 2.6 m and climbed 2.2 m instead of 1.8, by luck of the stride; sim walk_jump / jump_reach)
+    for (const b of this.attached()) this.host.push(b, { x: 0, y: -(jumpSpeed + b.linvel().y) * b.mass() });
     this.host.log.info('jump', {
       id: this.id,
       crouching: c.crouch,

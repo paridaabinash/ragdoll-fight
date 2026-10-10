@@ -20,6 +20,8 @@ import {
   type ArenaDef,
   arenaLayout,
   ROTATION,
+  GAME_MODES,
+  type RoomSettings,
   type MatchInfo,
   type GameEvent,
   type LogEntry,
@@ -87,6 +89,8 @@ class Bot {
   welcomeHoles: { id: string; holes: unknown[] }[] = [];
   /** L7: the game speed the server's welcome said. */
   gameSpeed: number | null = null;
+  /** M1: the room's settings from the welcome. */
+  settings: RoomSettings | null = null;
   /** The arena's fixed shapes (walls, floors), for a browser-like preview. */
   statics: StaticShape[] = [];
   /** L3: this client's own reload, like the browser: no shot is sent before it (ms, performance.now). */
@@ -114,8 +118,8 @@ class Bot {
     this.log = new Logger(`bot:${name}`, sink);
   }
 
-  /** `room`: an id from the room list, 'new', or undefined for quick play. */
-  connect(port: number, protocol: number = NET.protocolVersion, room?: string): Promise<void> {
+  /** `room`: a code from the room list, 'new', or undefined for quick play. `settings`: M1, for a new room. */
+  connect(port: number, protocol: number = NET.protocolVersion, room?: string, settings?: Partial<RoomSettings>): Promise<void> {
     this.ws = new WebSocket(`ws://127.0.0.1:${port}`);
     this.ws.binaryType = 'nodebuffer';
     this.ws.on('message', (data: Buffer, isBinary) => {
@@ -126,7 +130,7 @@ class Bot {
     this.ws.on('close', () => (this.closed = true));
     return new Promise((ok, fail) => {
       this.ws.once('open', () => {
-        this.sendRaw(JSON.stringify({ t: 'join', v: protocol, name: this.name, ...(room ? { room } : {}) }));
+        this.sendRaw(JSON.stringify({ t: 'join', v: protocol, name: this.name, ...(room ? { room } : {}), ...(settings ? { settings } : {}) }));
         ok();
       });
       this.ws.once('error', fail);
@@ -136,6 +140,11 @@ class Bot {
   async waitWelcome(timeoutMs = 3000): Promise<boolean> {
     for (let t = 0; t < timeoutMs && !this.id && !this.closed; t += 20) await sleep(20);
     return !!this.id;
+  }
+
+  /** M2: a vote for the next arena. */
+  vote(arena: string): void {
+    this.sendRaw(JSON.stringify({ t: 'vote', arena }));
   }
 
   /** L3: `aim` = the gun's angle (null: no aim input, the gun points ahead). */
@@ -214,12 +223,13 @@ class Bot {
       this.statics = msg.statics;
       this.welcomeHoles = msg.holes;
       this.gameSpeed = msg.gameSpeed;
+      this.settings = msg.settings;
     }
     else if (msg.t === 'match') {
       this.match = msg.match;
       const m = msg.match.modifier;
       if (m) this.modifiersHeard.push(`${m.kind}@${m.start}-${m.end}`);
-      this.matchLog.push(`match ${msg.match.number} ${msg.match.phase} ${msg.match.result?.reason ?? ''} ${msg.match.result?.winner ?? ''}`);
+      this.matchLog.push(`match ${msg.match.number} ${msg.match.phase} ${msg.match.result?.reason ?? ''} ${msg.match.result?.winner ?? ''} ${msg.match.vote ? JSON.stringify(msg.match.vote) : ''} ${msg.match.round ? JSON.stringify(msg.match.round) : ''}`);
     } else if (msg.t === 'arena') {
       this.bodyLabels = msg.bodies.map((b) => b.label);
       this.statics = msg.statics;
@@ -400,7 +410,9 @@ const scenarios: Record<string, () => Promise<void>> = {
         await Promise.all(bots.map((b) => b.waitWelcome()));
         await Promise.all(bots.map((b) => b.fight(8000)));
         const log = since(mark);
-        const still = log.filter((e) => e.ev === 'arrow_hit' && e.moving === false);
+        // (still on both ends: a shot whose preview said "a player" can rightly end in the wall behind when that player
+        // steps away, a dodge, not a preview error)
+        const still = log.filter((e) => e.ev === 'arrow_hit' && e.moving === false && e.predMoving === false);
         const off = still.filter((e) => Number(e.predErr) > 0.01 || Number(e.predTickErr) !== 0);
         const speeds = bots.map((b) => b.gameSpeed);
         const trouble = log.filter((e) => e.lvl === 'warn' || e.lvl === 'error').filter((e) => !['slow_step', 'rate_limited'].includes(String(e.ev)));
@@ -590,7 +602,9 @@ const scenarios: Record<string, () => Promise<void>> = {
       const shooter = bots[0];
       const room = srv.rooms.get(shooter.room)!;
       const errs: number[] = [];
-      shooter.input(null, 0);
+      // aiming already (the gun arm up, toward the first target), so the wait below lets the body settle with the arm
+      // raised: raising it from the rest pose moved the first shot 4-9 cm off the preview
+      shooter.input(0.45, 0);
       // (the fight may have killed it: wait for the respawn, then let the new body settle)
       const alive = () => room.world.playerStats(shooter.id).alive;
       for (let t = 0; t < 100 && !alive(); t++) await sleep(50);
@@ -607,6 +621,10 @@ const scenarios: Record<string, () => Promise<void>> = {
         room.world.playerStats(shooter.id).refill(100); // (stay out of arms-down: the arms dropping moves the shoulder)
         await shooter.reloaded();
         const angle = 0.45 + 0.05 * (i % 3); // down into the floor ahead: a fixed target
+        // aim first, like a player does before clicking: the gun arm swinging to a new angle nudges the body a few cm
+        // on the server, after the snapshot the client predicts from (6-7 cm off at the landing, now and then)
+        shooter.input(angle, 0);
+        await sleep(400);
         const want = shooter.predict(angle);
         const seq = shooter.fire(angle);
         for (let t = 0; t < 60 && !shooter.shots.some((s) => s.seq === seq); t++) await sleep(20);
@@ -618,9 +636,10 @@ const scenarios: Record<string, () => Promise<void>> = {
         errs.push(Math.hypot(p[0] - want.hit.x, p[1] - want.hit.y));
       }
       const worst = errs.length ? Math.max(...errs) : Infinity;
+      console.log(`lag:       per shot (cm) ${errs.map((e) => r2(e * 100)).join(' ')}`);
       console.log(`lag:       still shooter under lag: ${errs.length} shots compared, worst preview vs server hit ${r2(worst * 100)} cm`);
       check(errs.length >= 5, `lag: only ${errs.length} still shots compared`);
-      check(worst < 0.05, `lag: a shot landed ${r2(worst)} m from where the client's preview said`);
+      check(worst < 0.02, `lag: a shot landed ${r2(worst)} m from where the client's preview said`);
       for (const b of bots) b.close();
     }, { bots: false }); // (no filler bots: they shot and even killed the shooter during the precise phases)
   },
@@ -694,7 +713,7 @@ const scenarios: Record<string, () => Promise<void>> = {
       const after = await list();
       const botsWithTwo = friend.roster.filter((r) => r.bot).length;
       const lost = new Bot('lost');
-      await lost.connect(srv.port, NET.protocolVersion, 'r999');
+      await lost.connect(srv.port, NET.protocolVersion, 'ZZZZ');
       await sleep(300);
       // fill the host's room and try one more
       const fillers: Bot[] = [];
@@ -728,6 +747,124 @@ const scenarios: Record<string, () => Promise<void>> = {
       for (const b of [host, other, friend, ...fillers]) b.close();
       await sleep(300);
     });
+  },
+
+  // M1: rooms made with settings: the code is 4 letters; the list shows mode/arena/time; a private room is left out of
+  // the list and quick play, but a friend joins it with the code (typed in lower case); the settings reach everyone.
+  async room_settings() {
+    await withServer(
+      'room_settings',
+      async (srv) => {
+        const list = async () => (await (await fetch(`http://127.0.0.1:${srv.port}/rooms`)).json()) as RoomList;
+        const pub = new Bot('pub');
+        await pub.connect(srv.port, NET.protocolVersion, 'new', { mode: 'crown', arenas: 'one', arena: 'frozen_lake', maxPlayers: 4, minutes: 2 });
+        await pub.waitWelcome();
+        const secret = new Bot('secret');
+        await secret.connect(srv.port, NET.protocolVersion, 'new', { mode: 'melee', private: true, bots: 'off' });
+        await secret.waitWelcome();
+        const friend = new Bot('friend');
+        await friend.connect(srv.port, NET.protocolVersion, secret.room.toLowerCase());
+        await friend.waitWelcome();
+        const quick = new Bot('quick');
+        await quick.connect(srv.port);
+        await quick.waitWelcome();
+        const badSettings = new Bot('badset');
+        await badSettings.connect(srv.port, NET.protocolVersion, 'new', { mode: 'deathmatch' } as unknown as Partial<RoomSettings>);
+        await sleep(400);
+        const rooms = (await list()).rooms;
+        const pubInfo = rooms.find((r) => r.id === pub.room);
+        console.log(
+          `room_settings: codes ${pub.room}/${secret.room}, listed [${rooms.map((r) => `${r.id} ${r.mode} ${r.arena} ${r.players.length}+${r.bots}/${r.max} ${r.secondsLeft}s`).join(' | ')}], ` +
+            `friend in ${friend.room} (${friend.settings?.mode}, bots ${friend.roster.filter((r) => r.bot).length}), quick play -> ${quick.room}, bad settings -> ${badSettings.errors[0]}`,
+        );
+        check(/^[A-Z]{4}$/.test(pub.room) && /^[A-Z]{4}$/.test(secret.room), 'room_settings: room codes are not 4 letters');
+        check(pub.settings?.mode === 'crown' && pub.match?.mode === 'crown' && pub.arena?.id === 'frozen_lake', 'room_settings: the creator\'s settings were not used');
+        check(pubInfo?.mode === 'crown' && pubInfo.max === 4 && pubInfo.arena === 'frozen_lake' && pubInfo.secondsLeft > 100, `room_settings: list entry wrong: ${JSON.stringify(pubInfo)}`);
+        check(!rooms.some((r) => r.id === secret.room), 'room_settings: a private room is in the list');
+        check(friend.room === secret.room && friend.settings?.mode === 'melee', 'room_settings: the friend did not get into the private room by code');
+        check(friend.roster.filter((r) => r.bot).length === 0, 'room_settings: bots in a bots-off room');
+        check(quick.room !== secret.room, 'room_settings: quick play went into a private room');
+        check(badSettings.errors[0] === 'expected_join', `room_settings: bad settings gave ${badSettings.errors[0]}`);
+        for (const b of [pub, secret, friend, quick]) b.close();
+        await sleep(300);
+      },
+      { rotation: ROTATION },
+    );
+  },
+
+  // M2: an arena vote over the network: two people vote on the results screen, both hear every vote and the same
+  // next arena (the one they voted for).
+  async vote() {
+    await withServer(
+      'vote',
+      async (srv) => {
+        const mark = entries.length;
+        const a = new Bot('ann');
+        await a.connect(srv.port, NET.protocolVersion, 'new', { arenas: 'vote', bots: 'off' });
+        await a.waitWelcome();
+        const b = new Bot('ben');
+        await b.connect(srv.port, NET.protocolVersion, a.room);
+        await b.waitWelcome();
+        for (let t = 0; t < 8000 && a.match?.phase !== 'results'; t += 50) await sleep(50);
+        const options = a.match?.vote?.options.map((o) => o.id) ?? [];
+        const played = a.match?.arena ?? '';
+        const pick = options[1];
+        a.vote(pick);
+        b.vote(options[0]);
+        await sleep(150);
+        b.vote(pick); // changed their mind
+        await sleep(300);
+        const votesSeen = [a, b].map((x) => JSON.stringify(x.match?.vote?.votes ?? {}));
+        for (let t = 0; t < 6000 && (a.match?.phase !== 'playing' || b.match?.phase !== 'playing'); t += 50) await sleep(50);
+        await sleep(300);
+        const picked = since(mark).find((e) => e.ev === 'arena_pick');
+        console.log(`vote:      options [${options.join(', ')}], votes seen ${votesSeen.join(' / ')}, next arena ${a.arena?.id} / ${b.arena?.id} (${picked?.how})`);
+        check(options.length === 3 && !options.includes(played), `vote: options [${options}] (just played ${played})`);
+        check(votesSeen[0] === votesSeen[1] && votesSeen[0].includes(pick) && !votesSeen[0].includes(options[0]), `vote: players saw different votes: ${votesSeen.join(' / ')}`);
+        check(a.arena?.id === pick && b.arena?.id === pick, `vote: next arena ${a.arena?.id}/${b.arena?.id}, voted ${pick}`);
+        check(picked?.how === 'vote', `vote: picked by ${picked?.how}`);
+        check(a.matchLog.join('|') === b.matchLog.join('|'), 'vote: the two players heard different match stories');
+        a.close();
+        b.close();
+        await sleep(300);
+      },
+      { rotation: ROTATION, match: { lengthTicks: 3 * 60, resultsTicks: 3 * 60 } },
+    );
+  },
+
+  // M3: every mode over the network: a room made with it, a friend joins by code, they fight with the filler bots
+  // for a few seconds. Both get the mode in the welcome and match info; Team Battle teams reach the roster.
+  async modes() {
+    for (const mode of GAME_MODES) {
+      await withServer(
+        `modes:${mode}`,
+        async (srv) => {
+          const mark = entries.length;
+          const a = new Bot(`${mode}_a`);
+          await a.connect(srv.port, NET.protocolVersion, 'new', { mode, arenas: 'one', arena: 'backyard' });
+          await a.waitWelcome();
+          const b = new Bot(`${mode}_b`);
+          await b.connect(srv.port, NET.protocolVersion, a.room);
+          await b.waitWelcome();
+          await Promise.all([a.fight(2500), b.fight(2500)]);
+          const teams = a.roster.map((r) => r.team);
+          const swings = a.shots.filter((s) => s.swing).length + b.shots.filter((s) => s.swing).length;
+          const bullets = a.shots.filter((s) => s.arrow !== null).length + b.shots.filter((s) => s.arrow !== null).length;
+          const bad = since(mark).filter((e) => e.lvl === 'error' || (e.lvl === 'warn' && e.ev !== 'slow_step'));
+          console.log(`modes:     ${mode.padEnd(13)} room ${a.room}, mode ${a.match?.mode}/${b.match?.mode}, players ${a.roster.length}, teams [${teams.join(',')}], round ${a.match?.round ? a.match.round.number : '-'}, bullets ${bullets}, swings ${swings}, warnings ${bad.length}`);
+          check(a.settings?.mode === mode && a.match?.mode === mode && b.match?.mode === mode, `modes ${mode}: the mode didn't reach both players`);
+          check(a.roster.length === 4, `modes ${mode}: ${a.roster.length} players (want 2 people + 2 bots)`);
+          if (mode === 'teams') check(teams.filter((t) => t === 0).length === 2 && teams.filter((t) => t === 1).length === 2, `modes teams: teams [${teams}]`);
+          else check(teams.every((t) => t === undefined), `modes ${mode}: teams in a non-team room`);
+          if (mode === 'melee') check(bullets === 0 && swings > 0, `modes melee: ${bullets} bullets, ${swings} swings`);
+          if (mode === 'last_standing') check(!!a.match?.round, 'modes last_standing: no round info');
+          a.close();
+          b.close();
+          await sleep(200);
+        },
+        { rotation: ROTATION },
+      );
+    }
   },
 
   // S1: 6 players in the Test Lab (bigger than one screen). Everyone gets the same arena; positions past the old
@@ -872,7 +1009,7 @@ const scenarios: Record<string, () => Promise<void>> = {
         const mark = entries.length;
         for (const [part, n] of [['legFrontLower', 3]] as const) {
           for (let i = 0; i < n; i++) {
-            w.bodyHit(a.id, part, 1, 'netsim');
+            w.bodyHit(a.id, part, 1, 'netsim', b.id);
             await sleep(700); // trips settle
           }
         }
@@ -904,6 +1041,9 @@ const scenarios: Record<string, () => Promise<void>> = {
         console.log(`damage:    stages on the server [${stageLogs.join(' ')}]; ana/bea/late joiner see ${before.join(' / ')} (want ${want}), same bits at the same ticks ${ticks.length - differ}/${ticks.length}, late joiner got ${lateHoles} of ana's 3 holes; after respawn ${after.join(' / ')}`);
         check(before.every((s) => s === want), `damage: the clients don't all see the stump (${before.join(' / ')}, want ${want})`);
         check(lateHoles === 3, `damage: the late joiner's welcome had ${lateHoles} of ana's 3 bullet holes`);
+        // L7: LEG OFF! reaches every client, naming who did it
+        const legOff = (x: Bot) => x.events.filter((e) => e.ev.type === 'callout' && e.ev.kind === 'leg_off' && e.ev.id === a.id && e.ev.by === b.id).length;
+        check(legOff(a) === 1 && legOff(b) === 1, `damage: LEG OFF! reached ana ${legOff(a)}x, bea ${legOff(b)}x (want 1 each)`);
         check(ticks.length > 20 && differ === 0, `damage: ${differ} of ${ticks.length} ticks showed different damage to the two players`);
         check(after.every((s) => s === '0:0'), `damage: after respawning the damage is still shown (${after.join(' / ')})`);
         for (const x of [a, b, late]) x.close();
@@ -927,7 +1067,7 @@ const scenarios: Record<string, () => Promise<void>> = {
         const mark = entries.length;
         w.melee.roll = () => 0;
         for (const part of w.player(a.id).attached()) w.push(part, { x: 0, y: -6 * part.mass() });
-        await sleep(80);
+        await sleep(350); // (L7: a crit needs 0.25 s in the air; this throw stays up ~1 s)
         w.melee.onBulletHit(a.id, b.id);
         w.melee.roll = () => 0.9;
         const weapon = w.damage.get(a.id)!.weapon;
@@ -942,6 +1082,7 @@ const scenarios: Record<string, () => Promise<void>> = {
         for (let i = 0; i < 6 && w.playerStats(b.id).alive; i++) {
           const feet = w.feetOf(a.id);
           w.relocate(b.id, { x: feet.x + 1.2 * w.player(a.id).facing, y: feet.y }, (-w.player(a.id).facing) as 1 | -1);
+          w.playerStats(b.id).health = 100; // (L7: the bat comes down on the head: it's the 3rd hit that shatters, not the damage)
           await sleep(600);
           await a.reloaded();
           const s = w.player(a.id).jointPos('shoulderFront');

@@ -1,15 +1,24 @@
 import Phaser from 'phaser';
-import { aimAt, PX_PER_M, r3, type Aim, type Controls, type Logger, type Vec2 } from '@ragdoll/shared';
+import { AIM_POINT, aimAlong, moveAimPoint, r3, type Aim, type Controls, type Logger, type Vec2 } from '@ragdoll/shared';
+import { CAMERA } from './camera';
 
 type Keys = Record<'W' | 'A' | 'S' | 'D' | 'UP' | 'DOWN' | 'LEFT' | 'RIGHT' | 'SPACE' | 'T', Phaser.Input.Keyboard.Key>;
 
 /**
- * L3 gun controls: the gun points at the mouse pointer (only the direction counts); click to fire, hold to keep
- * firing each time it's reloaded. Keys walk, jump and crouch. Used by both the offline and the online scene.
+ * Gun controls (L7: character-relative aim): mouse movement moves an aim point attached to your shoulder (see
+ * `moveAimPoint`); the gun points at it, so walking and the camera never change your aim. A click locks the mouse to
+ * the game (pointer lock; Esc frees it) and fires; hold to keep firing each time it's reloaded. No cursor: a faint dot
+ * marks the aim point. Keys walk, jump and crouch. Used by both the offline and the online scene.
  */
 export class PlayerInput {
-  /** Where the pointer is on the screen (px), or null before it was ever moved over the game. */
-  pointer: Vec2 | null = null;
+  /** The aim point: offset from your shoulder (m), or null before the mouse ever moved over the game. */
+  offset: Vec2 | null = null;
+  /** Mouse movement (m) not yet applied to the aim point (it starts ahead of you, which needs your facing). */
+  private pending = { x: 0, y: 0, any: false };
+  /** The mouse is locked to the game (pointer lock). */
+  private locked = false;
+  /** For the perf report: turn-arounds (the point crossing your body) and the aim distance, since the last report. */
+  private stats = { turns: 0, distSum: 0, frames: 0, atMax: 0, badMoves: 0 };
   /** The fire button is held down. */
   private held = false;
   /** A press seen since the last `trigger()`: a click that goes down and up between two frames still fires. */
@@ -18,43 +27,97 @@ export class PlayerInput {
   /** Key presses seen since the last frame. Phaser forgets a tap that goes down and up between two frames. */
   private tapped = { jump: false, crouch: false };
 
-  constructor(private readonly scene: Phaser.Scene) {
-    const at = (p: Phaser.Input.Pointer) => {
-      if (Number.isFinite(p.x) && Number.isFinite(p.y)) this.pointer = { x: p.x, y: p.y };
+  constructor(
+    scene: Phaser.Scene,
+    private readonly log: Logger,
+  ) {
+    const canvas = scene.game.canvas;
+    // Raw mouse movement (works both locked and unlocked). CSS px -> m: as far as a cursor would move over the world.
+    const onMove = (e: MouseEvent) => {
+      const dx = e.movementX;
+      const dy = e.movementY;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) {
+        this.stats.badMoves++;
+        return;
+      }
+      const w = canvas.clientWidth;
+      if (!(w > 0)) return; // hidden or zero-size canvas
+      const k = (CAMERA.viewWidth / w) * AIM_POINT.sensitivity;
+      this.pending.x += dx * k;
+      this.pending.y += dy * k;
+      this.pending.any = true;
     };
-    scene.input.on('pointermove', at);
-    scene.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      at(p);
+    canvas.addEventListener('mousemove', onMove);
+    const onLock = () => {
+      const locked = document.pointerLockElement === canvas;
+      if (locked === this.locked) return;
+      this.locked = locked;
+      this.log.info('aim_lock', { on: locked });
+    };
+    document.addEventListener('pointerlockchange', onLock);
+    document.addEventListener('pointerlockerror', () => this.log.info('aim_lock_refused', {}));
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      canvas.removeEventListener('mousemove', onMove);
+      document.removeEventListener('pointerlockchange', onLock);
+    });
+    scene.input.on('pointerdown', () => {
+      // (newer browsers answer with a promise that rejects when the lock is refused, e.g. right after Esc: aiming
+      // still works unlocked, so it's only logged)
+      if (!this.locked) {
+        const req = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+        req?.catch?.((e: unknown) => this.log.info('aim_lock_refused', { why: String(e).slice(0, 80) }));
+      }
       this.held = true;
       this.pressed = true;
     });
     scene.input.on('pointerup', () => (this.held = false));
     scene.input.on('gameout', () => (this.held = false)); // released outside the canvas: no stuck trigger
-    scene.input.setDefaultCursor('crosshair');
+    // L7: no cursor over the game: the gun, its aim preview and a faint dot show where you aim
+    scene.input.setDefaultCursor('none');
     const kb = scene.input.keyboard!;
     this.keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,T') as Keys;
     for (const key of ['W', 'UP', 'SPACE']) kb.on(`keydown-${key}`, () => (this.tapped.jump = true));
     for (const key of ['S', 'DOWN']) kb.on(`keydown-${key}`, () => (this.tapped.crouch = true));
   }
 
-  /** The pointer in the world (m), through the scene's camera as it is now. */
-  pointerWorld(): Vec2 | null {
-    if (!this.pointer) return null;
-    const w = this.scene.cameras.main.getWorldPoint(this.pointer.x, this.pointer.y);
-    return { x: w.x / PX_PER_M, y: w.y / PX_PER_M };
+  /**
+   * This frame's aim: applies the mouse movement to the aim point and points from the shoulder toward it. `facing`:
+   * where you face now (the point starts ahead of you). Null before the mouse ever moved. Call once per frame.
+   */
+  aimFrom(facing: number): Aim | null {
+    if (this.pending.any) {
+      const before = this.offset ?? { x: (facing < 0 ? -1 : 1) * AIM_POINT.start, y: 0 };
+      this.offset = moveAimPoint(before, this.pending.x, this.pending.y);
+      if (Math.sign(this.offset.x) !== Math.sign(before.x) && this.offset.x !== 0) this.stats.turns++;
+      this.pending = { x: 0, y: 0, any: false };
+    }
+    if (!this.offset) return null;
+    const d = Math.hypot(this.offset.x, this.offset.y);
+    this.stats.distSum += d;
+    this.stats.frames++;
+    if (d > AIM_POINT.maxDistance - 0.01) this.stats.atMax++;
+    return aimAlong(this.offset);
   }
 
-  /** The aim from your shoulder (m) to the pointer; null before the pointer was ever over the game. */
-  aimFrom(shoulder: Vec2): Aim | null {
-    const to = this.pointerWorld();
-    const aim = to ? aimAt(shoulder, to) : null;
-    // (a hidden or zero-size canvas gives NaN coordinates: no aim rather than a broken one)
-    return aim && Number.isFinite(aim.angle) ? aim : null;
+  /** Where the aim point is in the world (m), for the dot; null before the mouse moved. */
+  aimPoint(shoulder: Vec2): Vec2 | null {
+    return this.offset ? { x: shoulder.x + this.offset.x, y: shoulder.y + this.offset.y } : null;
   }
 
-  /** Does the player want a shot now? (held, or clicked since the last call). Call once per frame. */
-  trigger(): boolean {
-    const want = this.held || this.pressed;
+  /** Aim numbers for the perf report (then reset): turn-arounds, average and at-the-limit share of the aim distance. */
+  aimReport(): Record<string, unknown> {
+    const s = this.stats;
+    const out = { aimTurns: s.turns, aimDist: s.frames ? r3(s.distSum / s.frames) : null, aimAtMax: s.frames ? r3(s.atMax / s.frames) : null, locked: this.locked, ...(s.badMoves ? { badMoves: s.badMoves } : {}) };
+    this.stats = { turns: 0, distSum: 0, frames: 0, atMax: 0, badMoves: 0 };
+    return out;
+  }
+
+  /**
+   * Does the player want a shot now? (held, or clicked since the last call). Call once per frame. `repeat` false
+   * (L7 melee): only a click counts, so one click = one swing (holding doesn't keep swinging).
+   */
+  trigger(repeat = true): boolean {
+    const want = (repeat && this.held) || this.pressed;
     this.pressed = false;
     return want;
   }

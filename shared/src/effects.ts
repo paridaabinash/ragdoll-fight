@@ -118,7 +118,9 @@ export type CalloutKind =
   | 'humbled'
   // L5
   | 'disarmed'
-  | 'shattered';
+  | 'shattered'
+  // L7
+  | 'leg_off';
 
 /**
  * L1: how big each callout is shown. `tag` = small text above the victim's head that follows it (most of them);
@@ -146,6 +148,7 @@ export const CALLOUT_SIZE: Record<CalloutKind, 'tag' | 'banner'> = {
   double_kill: 'banner',
   disarmed: 'banner',
   shattered: 'banner',
+  leg_off: 'banner',
 };
 
 export const CALLOUT_KINDS = Object.keys(CALLOUT_SIZE) as CalloutKind[];

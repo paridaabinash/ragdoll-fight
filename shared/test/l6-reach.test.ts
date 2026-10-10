@@ -32,8 +32,8 @@ describe('L6 arena reach check', () => {
     }
   }
 
-  it('the rotation has the final arenas first, then the placeholders (kept by choice)', () => {
-    expect(ROTATION.map((a) => a.id)).toEqual(['windy_rooftop', 'construction_site', 'test_lab', 'backyard']);
+  it('the rotation has the final arenas first, then the placeholders (kept by choice); L7: Frozen Lake after the rooftop', () => {
+    expect(ROTATION.map((a) => a.id)).toEqual(['windy_rooftop', 'frozen_lake', 'construction_site', 'test_lab', 'backyard']);
   });
 
   it('jump reach follows the measured numbers: level gap, shorter going up, longer going down, nothing past the climb', () => {

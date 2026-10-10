@@ -3,57 +3,98 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ragdoll PvP</title>
+    <meta name="theme-color" content="#0b0e14" />
+    <title>Ragdoll Archers</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #111418; overflow: hidden; font-family: system-ui, sans-serif; color: #eceff1; }
-      #join { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 5; overflow-y: auto; }
-      #join[hidden] { display: none; }
-      .panel { background: #1c2128; border: 1px solid #37474f; border-radius: 10px; padding: 24px 28px; width: min(380px, calc(100vw - 32px)); box-sizing: border-box; margin: 16px 0; }
-      h1 { margin: 0 0 16px; font-size: 22px; }
-      h2 { margin: 18px 0 8px; font-size: 14px; color: #b0bec5; font-weight: 600; }
-      label { display: block; font-size: 13px; color: #b0bec5; margin-bottom: 6px; }
-      label.gap { margin-top: 12px; }
-      select { width: 100%; box-sizing: border-box; padding: 9px; font-size: 15px; border-radius: 6px; border: 1px solid #455a64; background: #0f1317; color: #eceff1; }
-      #hat-help { margin-top: 6px; }
-      input { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #455a64; background: #0f1317; color: #eceff1; }
-      button { padding: 10px 12px; font-size: 15px; font-weight: 600; border: 0; border-radius: 6px; background: #42a5f5; color: #0b1a26; cursor: pointer; }
-      button.secondary { background: #37474f; color: #eceff1; }
-      button:disabled { opacity: 0.55; cursor: default; }
-      .row { display: flex; gap: 8px; margin-top: 12px; }
-      .row button { flex: 1; }
-      #rooms { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-      #rooms li { display: flex; align-items: center; gap: 8px; background: #0f1317; border: 1px solid #263238; border-radius: 6px; padding: 8px 10px; }
-      #rooms li .who { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #rooms li .who b { font-size: 14px; }
-      #rooms li button { padding: 6px 12px; font-size: 13px; }
-      #rooms .empty { color: #78909c; font-size: 13px; background: none; border: 0; padding: 0; }
-      #share { margin-top: 16px; font-size: 13px; color: #b0bec5; }
-      #share code { color: #90caf9; font-size: 14px; user-select: all; }
-      #status { min-height: 20px; margin-top: 12px; font-size: 13px; color: #ef9a9a; }
-      .small { margin-top: 12px; font-size: 12px; color: #78909c; }
-      .small a { color: #90caf9; }
+      html, body { margin: 0; height: 100%; background: #0b0e14; overflow: hidden; font-family: system-ui, sans-serif; color: #eceff1; }
     </style>
   </head>
   <body>
-    <div id="join" hidden>
-      <form class="panel" id="join-form">
-        <h1>Ragdoll Archers</h1>
-        <label for="name">Your name</label>
-        <input id="name" maxlength="16" autocomplete="nickname" />
-        <label for="hat" class="gap">Hat</label>
-        <select id="hat"></select>
-        <div id="hat-help" class="small"></div>
-        <div class="row">
-          <button id="play" type="submit">Quick play</button>
-          <button id="new-room" class="secondary" type="button">New room</button>
+    <!-- M4: the live bot fight behind the menu (a Phaser canvas goes in here) -->
+    <div id="menu-bg" hidden></div>
+    <div id="menu" hidden>
+      <div class="menu-shade"></div>
+      <main class="menu-main">
+        <header class="logo">
+          <span class="logo-top">RAGDOLL</span>
+          <span class="logo-bottom">ARCHERS<small>.io</small></span>
+        </header>
+        <div id="invite" class="invite" hidden></div>
+
+        <div class="menu-grid">
+          <!-- character card: live ragdoll, name, hat -->
+          <section class="card character" aria-label="Your character">
+            <div id="preview" class="preview" title="Click to poke"></div>
+            <label for="name" class="field-label">Your name</label>
+            <input id="name" maxlength="16" autocomplete="nickname" placeholder="archer" />
+            <div class="hat-picker">
+              <button type="button" id="hat-prev" class="icon-btn" aria-label="Previous hat">‹</button>
+              <div class="hat-name"><span id="hat-name">No hat</span><small id="hat-lock"></small></div>
+              <button type="button" id="hat-next" class="icon-btn" aria-label="Next hat">›</button>
+            </div>
+            <div id="hat-help" class="hint"></div>
+          </section>
+
+          <!-- play -->
+          <section class="play-col">
+            <button type="button" id="play" class="btn-play">PLAY</button>
+            <div class="btn-row">
+              <button type="button" id="new-room" class="btn-sub"><b>+</b> Create room</button>
+              <button type="button" id="join-code-btn" class="btn-sub"><b>#</b> Join with code</button>
+              <button type="button" id="practice" class="btn-sub"><b>◎</b> Practice</button>
+            </div>
+            <form id="join-code" class="join-code" hidden>
+              <input id="code" maxlength="4" autocomplete="off" spellcheck="false" placeholder="CODE" aria-label="Room code" />
+              <button type="submit" class="btn-small">Join</button>
+            </form>
+            <div id="status" class="status" role="status"></div>
+
+            <div class="rooms-head">
+              <h2>Open rooms</h2>
+              <span id="rooms-count" class="hint"></span>
+            </div>
+            <ul id="rooms" class="rooms"><li class="empty">Looking for rooms...</li></ul>
+            <div id="share" class="hint"></div>
+          </section>
         </div>
-        <h2>Rooms on this server</h2>
-        <ul id="rooms"><li class="empty">Looking for rooms...</li></ul>
-        <div id="share"></div>
-        <div id="status"></div>
-        <div class="small">Offline test range: <a href="?mode=local">?mode=local</a> · fake lag: add <code>?lag=120&amp;jitter=40</code></div>
-      </form>
+        <footer class="hint foot">Offline test range: <a href="?mode=local">?mode=local</a> · fake lag: <code>?lag=120&amp;jitter=40</code> · cover art: <a href="?mode=cover">?mode=cover</a></footer>
+      </main>
+
+      <!-- M1: create a room -->
+      <div id="create" class="sheet" hidden>
+        <form id="create-form" class="sheet-panel" aria-label="Create a room">
+          <div class="sheet-head">
+            <h2>Create a room</h2>
+            <button type="button" id="create-close" class="icon-btn" aria-label="Close">×</button>
+          </div>
+          <div class="field-label">Mode</div>
+          <div id="modes" class="modes"></div>
+          <div class="field-label">Arenas</div>
+          <div id="arena-choice" class="seg"></div>
+          <div id="arena-hint" class="hint"></div>
+          <div id="arenas" class="arenas" hidden></div>
+          <div class="opts">
+            <div>
+              <div class="field-label">Bots</div>
+              <div id="bots" class="seg"></div>
+            </div>
+            <div>
+              <div class="field-label">Match length</div>
+              <div id="minutes" class="seg"></div>
+            </div>
+            <div>
+              <div class="field-label">Max people <b id="max-out"></b></div>
+              <input id="max" type="range" min="2" max="8" step="1" />
+            </div>
+            <label class="toggle"><input id="private" type="checkbox" /> <span>Private: only people with the code can join</span></label>
+          </div>
+          <button type="submit" id="create-go" class="btn-play small">CREATE ROOM</button>
+        </form>
+      </div>
     </div>
+
+    <!-- M2: the arena vote on the results screen (shown over the game) -->
+    <div id="vote" class="vote" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

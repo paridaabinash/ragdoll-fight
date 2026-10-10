@@ -56,6 +56,13 @@ export class PlayerStats {
     return tick < this.protectedUntil;
   }
 
+  /** L7: ends the spawn shield now (you shot or swung). Returns how many ticks it had left (0: it wasn't on). */
+  endProtection(tick: number): number {
+    const left = Math.max(0, this.protectedUntil - tick);
+    if (left > 0) this.protectedUntil = tick;
+    return left;
+  }
+
   /** Every tick: refill after a short rest (L3: aiming is free; shots and jumps cost). */
   updateStamina(tick: number): void {
     if (!this.alive) return;

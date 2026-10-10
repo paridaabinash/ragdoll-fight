@@ -4,6 +4,7 @@ import {
   BOT,
   BotBrain,
   botsWanted,
+  DEFAULT_ROOM_SETTINGS,
   captureSnapshot,
   GAME_SPEED,
   TICK_SECONDS,
@@ -27,6 +28,8 @@ import {
   type MatchSettings,
   type MovableBody,
   type PlayerHoles,
+  type RoomInfo,
+  type RoomSettings,
   type RosterEntry,
   type HatKind,
   type ServerMessage,
@@ -72,10 +75,15 @@ const BACKPRESSURE_BYTES = 256 * 1024;
 const NO_CONN: Conn = { send() {}, close() {}, bufferedAmount: 0 };
 
 export interface RoomOptions {
-  /** Arenas in match order (default: the Backyard only). */
+  /** The arenas this room can play, in rotation order (default: the Backyard only). */
   rotation?: ArenaDef[];
+  /** Match timing (tests, sims, MATCH_SECONDS); default: the settings' minutes. */
   match?: MatchSettings;
-  /** Filler bots on/off (default on). */
+  /** M1: what the room plays (default: free-for-all through `rotation` in order, as before M1). */
+  settings?: RoomSettings;
+  /** Seed for random arena picks and votes (default 1: repeatable). */
+  seed?: number;
+  /** Filler bots on/off (default on; the settings can turn them off too). */
   bots?: boolean;
   /** Power-up bubbles hold these special arrows in this order (tests/netsim); default random. */
   pickupOrder?: SpecialKind[];
@@ -95,6 +103,8 @@ export class GameRoom {
   private readonly clients = new Map<string, Client>();
   private readonly bots = new Map<string, Bot>();
   private readonly botsOn: boolean;
+  /** M1: what this room plays (fixed for its life). */
+  readonly settings: RoomSettings;
   private nextPlayer = 1;
   private nextBot = 1;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -112,14 +122,46 @@ export class GameRoom {
     opts: RoomOptions = {},
   ) {
     this.log = new Logger(`room:${id}`, sink);
-    this.botsOn = opts.bots ?? true;
+    this.settings = opts.settings ?? { ...DEFAULT_ROOM_SETTINGS, arenas: 'rotation' };
+    this.botsOn = (opts.bots ?? true) && this.settings.bots !== 'off';
+    const timing: MatchSettings = opts.match ?? { lengthTicks: this.settings.minutes * 60 * 60, resultsTicks: MATCH.resultsTicks };
     // The first arena is sized for a filled room (people arrive one by one after it's built).
-    this.match = new Match(this.log, opts.rotation ?? [BACKYARD], this.botsOn ? BOT.fillTo : 1, opts.match ?? MATCH);
+    this.match = new Match(this.log, opts.rotation ?? [BACKYARD], this.botsOn ? this.fillTo : 1, timing, {
+      mode: this.settings.mode,
+      arenas: this.settings.arenas,
+      first: this.settings.arena,
+      seed: opts.seed ?? 1,
+    });
     this.pickupOrder = opts.pickupOrder ?? null;
     this.botSeed = opts.botSeed ?? 0;
     if (this.pickupOrder) this.world.specials.setOrder(this.pickupOrder);
     this.movables = this.world.movableBodies();
-    this.log.info('room_open', { room: id, arena: this.match.info.arena, size: this.match.info.size, rotation: (opts.rotation ?? [BACKYARD]).map((a) => a.id) });
+    this.log.info('room_open', { room: id, arena: this.match.info.arena, size: this.match.info.size, rotation: (opts.rotation ?? [BACKYARD]).map((a) => a.id), settings: this.settings });
+  }
+
+  /** Bots fill the room up to this many players (fewer in a small room). */
+  private get fillTo(): number {
+    return Math.min(BOT.fillTo, this.settings.maxPlayers);
+  }
+
+  /** M1: this room in the room list. */
+  info(): RoomInfo {
+    const m = this.match.info;
+    const top = this.match.scores()[0];
+    const leaderName = top && top.score > 0 ? this.everyone().find((c) => c.id === top.id)?.name : undefined;
+    const until = m.phase === 'results' ? (m.resultsUntil ?? this.world.tick) : m.endTick;
+    return {
+      id: this.id,
+      players: this.playerNames(),
+      bots: this.bots.size,
+      max: this.settings.maxPlayers,
+      mode: this.settings.mode,
+      arena: m.arena,
+      arenaName: m.arenaName,
+      phase: m.phase,
+      secondsLeft: Math.max(0, Math.ceil((until - this.world.tick) / 60)),
+      leader: leaderName ? { name: leaderName, score: top.score } : null,
+    };
   }
 
   /** The current match's world (a new one each match). */
@@ -141,7 +183,7 @@ export class GameRoom {
   }
 
   get full(): boolean {
-    return this.clients.size >= NET.maxPlayers;
+    return this.clients.size >= this.settings.maxPlayers;
   }
 
   /** Starts the real-time loop. Tests call `tick()` directly instead. */
@@ -162,6 +204,7 @@ export class GameRoom {
       you: id,
       slot: this.world.slotOf(id),
       room: this.id,
+      settings: this.settings,
       tick: this.world.tick,
       arena: this.arenaInfo(),
       match: this.match.info,
@@ -332,18 +375,23 @@ export class GameRoom {
   /** Adds or removes filler bots so the room has `BOT.fillTo` players while few people are in it. */
   private fillBots(): void {
     if (!this.botsOn) return;
-    const want = botsWanted(this.humans);
+    const want = botsWanted(this.humans, this.fillTo);
+    const skill = this.settings.bots === 'off' ? 'normal' : this.settings.bots;
     while (this.bots.size < want) {
       const id = `b${this.nextBot++}`;
       const taken = new Set([...this.clients.values(), ...[...this.bots.values()].map((b) => b.client)].map((c) => c.name));
       const name = BOT.names.find((n) => !taken.has(n)) ?? this.uniqueName('Bot');
-      const bot: Bot = { client: this.newClient(NO_CONN, id, name), brain: new BotBrain(id, this.nextBot * 7919 + this.botSeed), seq: 0 };
-      this.match.join(id);
+      const bot: Bot = { client: this.newClient(NO_CONN, id, name), brain: new BotBrain(id, this.nextBot * 7919 + this.botSeed, skill), seq: 0 };
+      this.match.join(id, true);
       this.bots.set(id, bot);
-      this.log.info('bot_join', { room: this.id, id, name, humans: this.humans, bots: this.bots.size });
+      this.log.info('bot_join', { room: this.id, id, name, humans: this.humans, bots: this.bots.size, skill, team: this.match.teamOf(id) ?? null });
     }
     while (this.bots.size > want) {
-      const id = [...this.bots.keys()].pop()!;
+      // (M3 Team Battle: a bot from the bigger team leaves, so the teams stay even)
+      const counts = this.match.teamCounts();
+      const bigger = counts[0] === counts[1] ? undefined : counts[0] > counts[1] ? 0 : 1;
+      const ids = [...this.bots.keys()];
+      const id = (bigger === undefined ? undefined : ids.reverse().find((b) => this.match.teamOf(b) === bigger)) ?? [...this.bots.keys()].pop()!;
       this.bots.delete(id);
       this.match.leave(id);
       this.log.info('bot_leave', { room: this.id, id, humans: this.humans, bots: this.bots.size });
@@ -379,6 +427,16 @@ export class GameRoom {
       case 'fire':
         this.fire(client, msg.seq, msg.angle);
         return;
+      case 'vote': {
+        const refused = this.match.vote(client.id, msg.arena);
+        if (refused) {
+          this.log.info('vote_refused', { id: client.id, arena: msg.arena, reason: refused });
+          return;
+        }
+        // (votes are lasting state: they live in the match info everyone gets)
+        this.broadcast({ t: 'match', tick: this.world.tick, match: this.match.info });
+        return;
+      }
     }
   }
 
@@ -410,7 +468,10 @@ export class GameRoom {
   }
 
   private roster(): RosterEntry[] {
-    const entry = (c: Client, bot: boolean) => ({ slot: this.world.slotOf(c.id), id: c.id, name: c.name, bot, hat: c.hat });
+    const entry = (c: Client, bot: boolean): RosterEntry => {
+      const team = this.match.teamOf(c.id);
+      return { slot: this.world.slotOf(c.id), id: c.id, name: c.name, bot, hat: c.hat, ...(team !== undefined ? { team } : {}) };
+    };
     return [...[...this.clients.values()].map((c) => entry(c, false)), ...[...this.bots.values()].map((b) => entry(b.client, true))];
   }
 

@@ -2,35 +2,39 @@ import Phaser from 'phaser';
 import type { Vec2 } from '@ragdoll/shared';
 import { VIEW } from './camera';
 
+/** L7: one row of the players panel (everyone's colour, name and score; you marked). */
+export interface LegendRow {
+  name: string;
+  color: number;
+  score: number;
+  you: boolean;
+  crown: boolean;
+  alive: boolean;
+}
+
 /** An enemy off the screen: where they are on the screen plane (px, may be outside it) and their color. */
 export interface Offscreen {
   at: Vec2;
   color: number;
+  /** L7: they lost a leg: the marker flashes with a small leg sign. */
+  stump?: boolean;
 }
 
 export interface HudFrame {
   lines: string[];
-  /**
-   * L3: a small ring at the mouse pointer (screen px) that fills up while the gun reloads (`ready` 0..1, 1 = ready);
-   * `blocked`: can't shoot now (arms down, dead, laughing): drawn dim red. null: none (replays, before the mouse moved).
-   */
-  reticle: Reticle | null;
   offscreen: Offscreen[];
-  /** Big panel (match results), or null. Sits on the left so a replay behind it stays visible. */
+  /** Big panel (match results), or null. Sits on the left. */
   banner: string[] | null;
   /** Big text at the top center (chaos round countdown), or null. */
   headline?: string | null;
+  /** L7: the players panel (top left); the text lines then sit under it. */
+  legend?: LegendRow[];
+  /** L7: one small quiet line at the top center (the match clock), or null. */
+  top?: string | null;
+  /** L7: one small quiet line at the bottom left (room, ping, controls help), or null. */
+  info?: string | null;
 }
 
-export interface Reticle {
-  at: Vec2;
-  ready: number;
-  color: number;
-  blocked: boolean;
-}
-
-/** Reticle size (px): ring radius and line width. */
-const RETICLE = { r: 11, width: 3 } as const;
 
 /** A big callout banner (L1) waiting or showing at the top of the screen. */
 export interface BannerCallout {
@@ -47,6 +51,9 @@ export interface BannerCallout {
 /** Banners sit under the chaos-round headline. */
 const BANNER_Y = 118;
 
+/** L7 players panel (px): position, width, row height, padding, font size. */
+const LEGEND = { x: 8, y: 8, width: 230, row: 20, pad: 6, font: 13 } as const;
+
 /** Markers sit this far inside the screen edge. */
 const EDGE_INSET = 22;
 const MARKER_SIZE = 11;
@@ -62,6 +69,10 @@ export class HudScene extends Phaser.Scene {
   private bannerText!: Phaser.GameObjects.Text;
   private headlineText!: Phaser.GameObjects.Text;
   private gfx!: Phaser.GameObjects.Graphics;
+  private topText!: Phaser.GameObjects.Text;
+  private infoText!: Phaser.GameObjects.Text;
+  /** L7 players panel: one name + one score text per row (reused). */
+  private legendRows: { name: Phaser.GameObjects.Text; score: Phaser.GameObjects.Text }[] = [];
   private feedLines: { text: string; until: number }[] = [];
   private calloutText!: Phaser.GameObjects.Text;
   private calloutSub!: Phaser.GameObjects.Text;
@@ -89,7 +100,34 @@ export class HudScene extends Phaser.Scene {
       .setVisible(false);
     this.calloutText = this.add.text(VIEW.width / 2, BANNER_Y, '', { fontFamily: 'Impact, Arial Black, sans-serif', fontSize: '36px', strokeThickness: 7 }).setOrigin(0.5, 0).setVisible(false);
     this.calloutSub = this.add.text(VIEW.width / 2, BANNER_Y, '', { fontFamily: 'monospace', fontSize: '13px', color: '#e3e9ee', backgroundColor: '#05070bb0', padding: { x: 5, y: 2 } }).setOrigin(0.5, 0).setVisible(false);
+    this.topText = this.add.text(VIEW.width / 2, 8, '', { fontFamily: 'monospace', fontSize: '14px', color: '#e3e9eebb' }).setOrigin(0.5, 0);
+    this.infoText = this.add.text(8, VIEW.height - 6, '', { fontFamily: 'monospace', fontSize: '12px', color: '#e3e9ee88' }).setOrigin(0, 1);
     this.ready = true;
+  }
+
+  /** L7: the players panel, top left: a dot in each player's colour, the name, the score; you in bold white. Returns its bottom (px). */
+  private drawLegend(g: Phaser.GameObjects.Graphics, rows: LegendRow[]): number {
+    const L = LEGEND;
+    while (this.legendRows.length < rows.length) {
+      const style = { fontFamily: 'monospace', fontSize: `${L.font}px`, color: '#e3e9ee' };
+      this.legendRows.push({ name: this.add.text(0, 0, '', style).setOrigin(0, 0.5), score: this.add.text(0, 0, '', style).setOrigin(1, 0.5) });
+    }
+    this.legendRows.forEach((r, i) => {
+      r.name.setVisible(i < rows.length);
+      r.score.setVisible(i < rows.length);
+    });
+    if (!rows.length) return 0;
+    const h = L.pad * 2 + rows.length * L.row;
+    g.fillStyle(0x05070b, 0.55).fillRoundedRect(L.x, L.y, L.width, h, 6);
+    rows.forEach((row, i) => {
+      const y = L.y + L.pad + L.row * (i + 0.5);
+      g.fillStyle(row.color, row.alive ? 1 : 0.35).fillCircle(L.x + L.pad + 5, y, 5);
+      const t = this.legendRows[i];
+      const color = row.you ? '#ffffff' : row.alive ? '#c9d1d9' : '#6b7480';
+      t.name.setText(`${row.crown ? '♛ ' : ''}${row.name}${row.you ? '  (you)' : ''}`).setPosition(L.x + L.pad + 16, y).setColor(color).setFontStyle(row.you ? 'bold' : '');
+      t.score.setText(String(row.score)).setPosition(L.x + L.width - L.pad, y).setColor(color).setFontStyle(row.you ? 'bold' : '');
+    });
+    return L.y + h;
   }
 
   /**
@@ -137,34 +175,21 @@ export class HudScene extends Phaser.Scene {
     const now = performance.now();
     this.feedLines = this.feedLines.filter((l) => l.until > now).slice(-4);
     this.feedText.setText(this.feedNow);
-    this.text.setText(frame.lines);
+    const g = this.gfx;
+    g.clear();
+    const legendBottom = this.drawLegend(g, frame.legend ?? []);
+    this.text.setText(frame.lines).setVisible(frame.lines.length > 0).setY(legendBottom ? legendBottom + 6 : 8);
+    this.topText.setVisible(!!frame.top).setText(frame.top ?? '');
+    this.infoText.setVisible(!!frame.info).setText(frame.info ?? '');
     // L6: a long help line reaches the top right corner: the feed then sits under the text block instead of on it
     const feedLeft = this.feedText.x - this.feedText.width;
-    const clash = this.feedLines.length > 0 && this.text.x + this.text.width + 12 > feedLeft;
-    this.feedText.setY(clash ? this.text.y + this.text.height + 6 : 8);
+    const clash = this.feedLines.length > 0 && this.text.visible && this.text.x + this.text.width + 12 > feedLeft;
+    // (below the quiet match line at the top center, which a long feed line would reach)
+    this.feedText.setY(clash ? this.text.y + this.text.height + 6 : 30);
     this.bannerText.setVisible(!!frame.banner).setText(frame.banner ?? []);
     this.headlineText.setVisible(!!frame.headline).setText(frame.headline ?? '');
     this.renderBanner(now);
-    const g = this.gfx;
-    g.clear();
-    if (frame.reticle) this.drawReticle(g, frame.reticle);
     for (const o of frame.offscreen) this.edgeMarker(g, o);
-  }
-
-  /** The reload ring: a faint full circle, the done part in your colour (white tick marks when ready). */
-  private drawReticle(g: Phaser.GameObjects.Graphics, r: Reticle): void {
-    const { x, y } = r.at;
-    g.lineStyle(RETICLE.width + 2, 0x000000, 0.45).strokeCircle(x, y, RETICLE.r);
-    if (r.blocked) {
-      g.lineStyle(RETICLE.width, 0xef5350, 0.6).strokeCircle(x, y, RETICLE.r);
-      return;
-    }
-    const ready = r.ready >= 1;
-    g.lineStyle(RETICLE.width, ready ? 0xffffff : r.color, ready ? 0.9 : 1);
-    g.beginPath();
-    g.arc(x, y, RETICLE.r, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * Math.max(0.001, Math.min(1, r.ready)), false);
-    g.strokePath();
-    if (ready) for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) g.lineBetween(x + Math.cos(a) * (RETICLE.r + 2), y + Math.sin(a) * (RETICLE.r + 2), x + Math.cos(a) * (RETICLE.r + 6), y + Math.sin(a) * (RETICLE.r + 6));
   }
 
   /** A triangle at the screen edge, on the line from the screen center toward the enemy, pointing at them. */
@@ -188,6 +213,12 @@ export class HudScene extends Phaser.Scene {
     g.fillCircle(x, y, MARKER_SIZE + 3);
     g.fillStyle(o.color, 1);
     g.fillTriangle(tip.x, tip.y, left.x, left.y, right.x, right.y);
+    if (o.stump && Math.floor(performance.now() / 250) % 2 === 0) {
+      // a small leg: thigh + shin bent at the knee, beside the marker (flashing)
+      const lx = x - Math.cos(a) * (MARKER_SIZE + 12);
+      const ly = y - Math.sin(a) * (MARKER_SIZE + 12);
+      g.lineStyle(3, 0xffd1dc, 1).beginPath().moveTo(lx - 2, ly - 7).lineTo(lx + 2, ly).lineTo(lx - 1, ly + 7).strokePath();
+    }
   }
 }
 

@@ -28,6 +28,9 @@ function duel(gap = 1.2) {
   return { world, log };
 }
 
+/** L7: long enough for any swing to wind up, strike and pass its last hit tick. */
+const SWING_TICKS = Math.max(...Object.values(MELEE.motions).map((m) => m.windup + m.ticks + m.activeAfter)) + 2;
+
 const steps = (world: GameWorld, n: number) => {
   const events: GameEvent[] = [];
   for (let i = 0; i < n; i++) {
@@ -43,8 +46,10 @@ function disarm(world: GameWorld, id = 'a') {
   const p = world.player(id);
   for (const b of p.attached()) world.push(b, { x: 0, y: -6 * b.mass() }); // up in the air
   for (let i = 0; i < 10 && p.grounded; i++) world.step(); // (grounded is checked at the start of a step)
+  for (let i = 0; i < MELEE.critMinAirTicks; i++) world.step(); // (L7: only after 0.25 s in the air)
   expect(p.grounded).toBe(false);
   world.melee.onBulletHit(id, 'b');
+  for (let i = 0; i < MELEE.drawTicks; i++) world.step(); // (L7: the weapon is drawn: hands empty until then)
 }
 
 describe('L5 critical hits', () => {
@@ -122,14 +127,14 @@ describe('L5 critical hits', () => {
 });
 
 describe('L5 melee', () => {
-  it('a swing in reach hits the nearest part, knocks the victim, breaks the limb; swings have a cooldown', () => {
+  it('a swing in reach hits along the weapon path, knocks the victim, breaks the limb; swings have a cooldown', () => {
     const { world, log } = duel(1.2);
     disarm(world);
     steps(world, 90);
     world.setControls('a', { ...NO_CONTROLS, aim: { angle: 0.2 } });
     expect(world.fire('a', { angle: 0.2 }).swing).toBe(true);
     expect(world.fire('a', { angle: 0.2 }).refused).toBe('fire_too_soon'); // the cooldown
-    const events = steps(world, MELEE.swing.swingTicks + 2);
+    const events = steps(world, SWING_TICKS);
     const hit = log.find((e) => e.ev === 'melee_hit');
     expect(hit).toMatchObject({ who: 'a', victim: 'b' });
     expect(Number(hit!.d)).toBeLessThanOrEqual(MELEE.reach);
@@ -144,7 +149,7 @@ describe('L5 melee', () => {
     disarm(world);
     steps(world, 90);
     world.fire('a', { angle: 0 });
-    steps(world, MELEE.swing.swingTicks + 2);
+    steps(world, SWING_TICKS);
     expect(log.some((e) => e.ev === 'melee_miss')).toBe(true);
     expect(world.playerStats('b').health).toBe(100);
     world.dispose();
@@ -156,11 +161,12 @@ describe('L5 melee', () => {
     steps(world, 90);
     for (let i = 0; i < MELEE.shatterAfter && world.playerStats('b').alive; i++) {
       world.relocate('b', { x: 11.2, y: GROUND_Y }, -1); // (back in reach after each knock)
+      world.playerStats('b').health = 100; // (L7: the bat comes down on the head: it's the hit count that shatters, not the damage)
       steps(world, 30);
       while (world.playerStats('a').fireBlock(world.tick)) steps(world, 1);
       world.playerStats('a').refill(100);
       world.fire('a', { angle: 0.1 });
-      steps(world, MELEE.swing.swingTicks + 2);
+      steps(world, SWING_TICKS);
     }
     expect(log.filter((e) => e.ev === 'melee_hit' && e.victim === 'b')).toHaveLength(MELEE.shatterAfter);
     expect(world.playerStats('b').alive).toBe(false);

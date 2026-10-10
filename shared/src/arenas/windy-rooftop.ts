@@ -110,11 +110,8 @@ export const WINDY_ROOFTOP: ArenaDef = {
   palette: {
     sky: { top: 0x070a14, bottom: 0x1a1a2e },
     horizon: ROOF,
-    layers: [
-      { kind: 'factory', color: 0x262a40, depth: 0.12, height: 16 },
-      { kind: 'houses', color: 0x1a1d2e, depth: 0.3, height: 11 },
-      { kind: 'factory', color: 0x10121d, depth: 0.55, height: 6 },
-    ],
+    // L7 clean look: no silhouettes (buildings, chains, trees made the screen busy); the sky and glows set the mood
+    layers: [],
     terrain: 0x0b0d16,
     accent: 0x1de9b6,
     glow: [

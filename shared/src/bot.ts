@@ -1,6 +1,6 @@
 import { solveAim, type Aim } from './aim';
 import { PIT_KILL_BELOW } from './arena';
-import { BOT, GUN, MELEE, STAMINA } from './constants';
+import { BOT, GUN, MELEE } from './constants';
 import { dist, r2, r3 } from './math';
 import { launchPointFrom } from './ragdoll';
 import type { GameWorld } from './world';
@@ -13,15 +13,27 @@ export type BotAction =
   | { t: 'input'; aim: number | null; crouch: boolean; jump: boolean; move: -1 | 0 | 1 }
   | { t: 'fire'; angle: number; swing?: number };
 
-/** How many filler bots a room wants: enough to reach `BOT.fillTo` players, none once people fill it. */
-export function botsWanted(humans: number): number {
-  return humans > 0 ? Math.max(0, BOT.fillTo - humans) : 0;
+/** How many filler bots a room wants: enough to reach `fillTo` players (M1: a room may want fewer), none once people fill it. */
+export function botsWanted(humans: number, fillTo: number = BOT.fillTo): number {
+  return humans > 0 ? Math.max(0, fillTo - humans) : 0;
 }
+
+/** M1: a room's bot level (not 'off'). */
+export type BotSkill = keyof typeof BOT.levels;
 
 /** Small seeded random number generator (same seed = same bot behavior, so sim runs repeat exactly). */
 export function seededRandom(seed: number): () => number {
   let s = Math.abs(Math.floor(seed)) % 2147483646 || 1;
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
+}
+
+/**
+ * Where the body's lowest sole is (y down): the bottom of a shin, or of a thigh stump. The look-ahead rays are measured
+ * from here: a fixed height under the torso was 0.65 m too low on two stumps (their torso is ~0.75 m up, not 1.4), so
+ * the knee ray started underground (a "step" every tick: a jump on every landing) and a 1 m step read as 0.35 m.
+ */
+function soleY(world: GameWorld, id: string): number {
+  return Math.max(...world.player(id).footPoints().map((f) => f.y));
 }
 
 /**
@@ -43,8 +55,12 @@ export class BotBrain {
   private arc = { k: 0 };
   /** Low on stamina from shooting: no shots until it's back to BOT.restUntil. */
   private tired = false;
-  /** After turning around at an obstacle: don't walk that way again until `until`. */
-  private avoid = { dir: 0, until: 0 };
+  /**
+   * After turning around at an obstacle (a wall, a pit, stuck): don't walk that way again until this tick. One per
+   * direction: a single shared slot forgot the wall behind as soon as the step ahead blocked too, so a bot boxed in
+   * between them walked back and forth forever (sim stump_survival: two stumps between Test Lab's wall and 1 m step).
+   */
+  private blockedUntil = { left: -Infinity, right: -Infinity };
   /** For the stuck anomaly: ticks spent trying to walk without getting 1 m anywhere. */
   private noProgress = { x: 0, ticks: 0 };
   private lastInput = '';
@@ -53,13 +69,18 @@ export class BotBrain {
   private now = 0;
   /** Progress check while walking: where we were, since when. */
   private stuck = { x: 0, dir: 0, since: 0, tries: 0 };
-  /** Out of stamina in front of an obstacle: stand still until it's back (`resting` = waiting for it). */
-  private resting = false;
+
+  private readonly aimError: number;
+  private readonly aimTicks: [number, number];
 
   constructor(
     readonly id: string,
     seed: number,
+    readonly skill: BotSkill = 'normal',
   ) {
+    const lvl = BOT.levels[skill];
+    this.aimError = BOT.aimError * lvl.aimErrorScale;
+    this.aimTicks = [Math.round(BOT.aimTicks[0] * lvl.aimTicksScale), Math.round(BOT.aimTicks[1] * lvl.aimTicksScale)];
     this.rand = seededRandom(seed);
   }
 
@@ -86,7 +107,7 @@ export class BotBrain {
         if ((tick - this.aimStart) % 10 === 0) this.aim = this.followAim(world, this.target!) ?? this.aim;
         const aim = this.aim!;
         if (tick >= this.until && st.reloadLeft(tick) === 0) {
-          const angle = aim.angle + this.gauss() * BOT.aimError;
+          const angle = aim.angle + this.gauss() * this.aimError;
           out.push({ t: 'fire', angle: r3(angle) });
           const after = st.stamina - Math.min(st.stamina, GUN.staminaPerShot);
           world.log.info('bot_fire', { id: this.id, target: this.target, errDeg: Math.round(((angle - aim.angle) * 180) / Math.PI), stamina: Math.round(after) });
@@ -106,9 +127,8 @@ export class BotBrain {
       }
     }
     if (tick >= this.until) this.decide(world, tick);
-    if (this.resting && this.mode === 'move') this.move = 0;
     this.move = this.avoidPit(world, this.move);
-    const jump = this.lookAhead(world, tick) || this.checkStuck(world, tick);
+    const jump = this.lookAhead(world) || this.checkStuck(world, tick);
     return this.input(null, this.move, jump);
   }
 
@@ -125,25 +145,23 @@ export class BotBrain {
     const enemy = this.nearestEnemy(world);
     if (!enemy) {
       if (tick >= this.until) this.decide(world, tick);
-      return this.input(null, this.avoidPit(world, this.move), this.lookAhead(world, tick) || this.checkStuck(world, tick));
+      return this.input(null, this.avoidPit(world, this.move), this.lookAhead(world) || this.checkStuck(world, tick));
     }
     const shoulder = world.player(this.id).jointPos('shoulderFront');
     const at = world.player(enemy).center();
     const d = dist(shoulder, at);
     const angle = Math.atan2(at.y - shoulder.y, at.x - shoulder.x);
     if (d <= MELEE.reach * BOT.meleeReachShare && !st.armsDown && st.fireBlock(tick) === null) {
-      const swingAt = angle + this.gauss() * BOT.aimError;
+      const swingAt = angle + this.gauss() * this.aimError;
       world.log.info('bot_swing', { id: this.id, target: enemy, d: r2(d) });
       return [{ t: 'fire', angle: r3(swingAt) }, ...this.input(angle, 0, false)];
     }
     // Close in (stop when right on top of them); aim at them when near, so the body faces them. A wall that way not
-    // long ago (lookAhead / checkStuck turned around): keep going the other way until `avoid` runs out, to get round.
+    // long ago (lookAhead / checkStuck turned around): keep going the other way until that runs out, to get round.
     const dx = at.x - shoulder.x;
-    let want: -1 | 0 | 1 = Math.abs(dx) > MELEE.reach * 0.5 ? (Math.sign(dx) as -1 | 1) : 0;
-    if (want && want === this.avoid.dir && tick < this.avoid.until) want = (-want) as -1 | 1;
-    this.move = this.avoidPit(world, want);
-    if (this.resting) this.move = 0;
-    const jump = this.lookAhead(world, tick) || this.checkStuck(world, tick) || (at.y < shoulder.y - 1.2 && Math.abs(dx) < 3);
+    const want: -1 | 0 | 1 = Math.abs(dx) > MELEE.reach * 0.5 ? (Math.sign(dx) as -1 | 1) : 0;
+    this.move = this.avoidPit(world, this.steer(world, want));
+    const jump = this.lookAhead(world) || this.checkStuck(world, tick) || (at.y < shoulder.y - 1.2 && Math.abs(dx) < 3);
     return this.input(d < 4 ? angle : null, this.move, jump);
   }
 
@@ -159,14 +177,14 @@ export class BotBrain {
         this.target = target;
         this.aim = aim;
         this.aimStart = tick;
-        this.until = tick + this.between(BOT.aimTicks);
+        this.until = tick + this.between(this.aimTicks);
         return 'aim';
       }
     }
     // No clear shot: walk toward the target (or wander if there's none).
     const dx = target ? world.player(target).center().x - me.x : 0;
-    this.move = target && Math.abs(dx) > 2 && this.rand() < 0.75 ? (Math.sign(dx) as -1 | 1) : ([-1, 0, 1] as const)[Math.floor(this.rand() * 3)];
-    if (this.move === this.avoid.dir && tick < this.avoid.until) this.move = (-this.move) as -1 | 1; // blocked that way not long ago
+    const want = target && Math.abs(dx) > 2 && this.rand() < 0.75 ? (Math.sign(dx) as -1 | 1) : ([-1, 0, 1] as const)[Math.floor(this.rand() * 3)];
+    this.move = this.steer(world, want); // not a way that was blocked not long ago
     this.until = tick + this.between(BOT.moveTicks);
     // (the stuck timer is NOT reset here: new decisions come faster than it reacts; only real movement resets it)
     return 'move';
@@ -189,7 +207,7 @@ export class BotBrain {
     let best: string | null = null;
     let bestD = Infinity;
     for (const [id, p] of world.players) {
-      if (id === this.id || !world.stats.get(id)?.alive) continue;
+      if (id === this.id || !world.stats.get(id)?.alive || world.sameTeam(this.id, id)) continue;
       const d = dist(me, p.center());
       if (d < bestD) [best, bestD] = [id, d];
     }
@@ -241,12 +259,12 @@ export class BotBrain {
    * What's right ahead while walking: a step (low block: jump it, from standing if close) or a wall
    * (too tall: turn around). Two short rays: one at knee height, one just above a jumpable step.
    */
-  private lookAhead(world: GameWorld, tick: number): boolean {
+  private lookAhead(world: GameWorld): boolean {
     if (!this.move) return false;
     const p = world.player(this.id);
     if (!p.grounded) return false;
     const c = p.center();
-    const feetY = c.y + BOT.torsoAboveFeet;
+    const feetY = soleY(world, this.id);
     const solidAhead = (height: number, reach: number) => {
       const from = { x: c.x, y: feetY - height };
       const hit = world.raycast(from, { x: c.x + this.move * reach, y: from.y }, this.id);
@@ -254,16 +272,15 @@ export class BotBrain {
     };
     const low = solidAhead(BOT.kneeHeight, BOT.lookAhead);
     if (low === null) return false;
-    if (solidAhead(BOT.maxStepUp, BOT.lookAhead) !== null) {
+    // (two stumps jump much lower: a step a whole body hops is a wall for them; sim jump_reach measures both)
+    if (solidAhead(p.legsLeft === 0 ? BOT.maxStepUpStumps : BOT.maxStepUp, BOT.lookAhead) !== null) {
       // a wall: don't walk into it
-      this.avoid = { dir: this.move, until: tick + BOT.avoidTicks };
-      this.move = (-this.move) as -1 | 1;
-      world.log.info('bot_turn', { id: this.id, at: r2(c.x), blockedDir: this.avoid.dir, why: 'wall' });
+      this.move = this.block(world, this.move, 'wall');
       return false;
     }
     // L6: a step up to BOT.maxStepUp is climbed from standing (sim jump_reach: 1.4 m with no run-up), so close to it a
     // slow bot just jumps; backing up for a run-up flip-flopped forever in a 2 m pocket against a wall (narrow Test Lab)
-    if (Math.abs(p.speedX()) >= BOT.jumpSpeedNeeded || low <= BOT.standJumpWithin) return world.playerStats(this.id).stamina >= STAMINA.jumpCost;
+    if (Math.abs(p.speedX()) >= BOT.jumpSpeedNeeded || low <= BOT.standJumpWithin) return true; // (L7: jumps are free)
     return false;
   }
 
@@ -281,13 +298,16 @@ export class BotBrain {
       const atGround = c.y > groundTop - 3 && c.y < groundTop;
       if (!atGround || ahead <= p.x || ahead >= p.x + p.w) continue;
       // (two looks, 0.75 m apart: a stride steps over a small gap, like the 0.5 m between a roof and the plank)
-      const feetY = c.y + BOT.torsoAboveFeet;
+      const feetY = soleY(world, this.id);
       const floorAt = (x: number) => {
         const hit = world.raycast({ x, y: feetY - 0.5 }, { x, y: groundTop + 0.5 }, this.id);
         return !!hit && !hit.label.includes(':') && hit.point.y < groundTop;
       };
       if (floorAt(ahead) || floorAt(ahead + move * 0.75)) continue; // a plank / bridge: walk on
-      this.move = (-move) as -1 | 1;
+      // L7: remember the pit like a wall. Without it, a bot whose target stood across a gap (and had no clear shot)
+      // turned back here, then decided to walk at the target again a moment later: back and forth at the edge for
+      // 5 s (sim arena_fights, windy_rooftop, bot_stuck).
+      this.move = this.block(world, move, 'pit');
       return this.move;
     }
     return move;
@@ -295,22 +315,13 @@ export class BotBrain {
 
   /**
    * Walking but not getting anywhere (a step, a crate, a wall): jump; still stuck: turn around, and remember
-   * not to walk that way for a while. Too tired to jump: stand still until stamina is back.
+   * not to walk that way for a while.
    * A bot that could jump but keeps wanting to walk without getting 1 m anywhere is an anomaly (a brain bug).
    */
   private checkStuck(world: GameWorld, tick: number): boolean {
     const p = world.player(this.id);
     const x = p.center().x;
-    const stamina = world.playerStats(this.id).stamina;
-    if (this.resting) {
-      if (stamina < STAMINA.recoverAt) {
-        this.move = 0;
-        return false;
-      }
-      this.resting = false;
-      this.stuck = { x, dir: 0, since: tick, tries: 0 };
-    }
-    const able = !p.down && stamina >= STAMINA.jumpCost; // could jump right now
+    const able = !p.down; // could jump right now (L7: jumps are free)
     if (this.move && able) {
       if (Math.abs(x - this.noProgress.x) > 1) this.noProgress = { x, ticks: 0 };
       else if (++this.noProgress.ticks === BOT.stuckAnomalyTicks) world.anomaly('bot_stuck', this.id, { at: r2(x), move: this.move, ticks: this.noProgress.ticks });
@@ -321,18 +332,41 @@ export class BotBrain {
     }
     if (tick - this.stuck.since < BOT.stuckTicks) return false;
     this.stuck.since = tick;
-    if (stamina < STAMINA.jumpCost) {
-      this.resting = true;
-      this.move = 0;
-      world.log.info('bot_rest', { id: this.id, at: r2(x), stamina: Math.round(stamina) });
-      return false;
-    }
     this.stuck.tries++;
     if (this.stuck.tries % 2 === 1) return true; // first try: jump
-    this.avoid = { dir: this.move, until: tick + BOT.avoidTicks };
-    this.move = (-this.move) as -1 | 1;
-    world.log.info('bot_turn', { id: this.id, at: r2(x), blockedDir: this.avoid.dir });
+    this.move = this.block(world, this.move, 'stuck');
     return false;
+  }
+
+  private isBlocked(dir: -1 | 1): boolean {
+    return this.now < this.blockedUntil[dir < 0 ? 'left' : 'right'];
+  }
+
+  /** The way to walk instead of `want`: the other way if `want` was blocked not long ago; 0 if both were (boxed in). */
+  private steer(world: GameWorld, want: -1 | 0 | 1): -1 | 0 | 1 {
+    if (!want || !this.isBlocked(want)) return want;
+    return this.isBlocked((-want) as -1 | 1) ? this.boxedIn(world) : ((-want) as -1 | 1);
+  }
+
+  /** Can't go `dir` (a wall, a pit, stuck): remember it for BOT.avoidTicks and turn around, or stop if that way is blocked too. */
+  private block(world: GameWorld, dir: -1 | 1, why: 'wall' | 'pit' | 'stuck'): -1 | 0 | 1 {
+    if (!this.isBlocked(dir)) world.log.info('bot_turn', { id: this.id, at: r2(world.player(this.id).center().x), blockedDir: dir, why });
+    this.blockedUntil[dir < 0 ? 'left' : 'right'] = this.now + BOT.avoidTicks;
+    return this.steer(world, dir);
+  }
+
+  /**
+   * Blocked both ways (e.g. two stumps in a pocket between a wall and a step they can't jump): stand and fight from
+   * here instead of walking back and forth; try again when the older block runs out (things change: a crate moves).
+   * A choice, not a brain bug: the stuck anomaly starts counting afresh.
+   */
+  private boxedIn(world: GameWorld): 0 {
+    if (this.move !== 0) {
+      const { left, right } = this.blockedUntil;
+      world.log.info('bot_boxed_in', { id: this.id, at: r2(world.player(this.id).center().x), legsLeft: world.player(this.id).legsLeft, retryIn: Math.min(left, right) - this.now });
+    }
+    this.noProgress.ticks = 0;
+    return 0;
   }
 
   /**

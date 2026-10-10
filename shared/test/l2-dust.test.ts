@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { DUST, DustTracker, type Puff } from '../../client/src/dust';
 
-/** Feeds the tracker one body for `frames` frames at 60 fps; `at(i)` gives feet x/y and grounded per frame. */
-function feed(at: (i: number) => { x: number; y: number; grounded: boolean; alive?: boolean }, frames: number, tracker = new DustTracker(), t0 = 1000): Puff[] {
+/**
+ * Feeds the tracker one body for `frames` frames at 60 fps; `at(i)` gives feet x/y and grounded per frame, and
+ * optionally each foot's height above the ground (`lift`: front, back; default both down).
+ */
+function feed(at: (i: number) => { x: number; y: number; grounded: boolean; alive?: boolean; lift?: [number, number]; spread?: number }, frames: number, tracker = new DustTracker(), t0 = 1000): Puff[] {
   const out: Puff[] = [];
   for (let i = 0; i < frames; i++) {
     const s = at(i);
-    out.push(...tracker.update([{ id: 'a', feet: { x: s.x, y: s.y }, grounded: s.grounded, alive: s.alive ?? true }], t0 + (i * 1000) / 60));
+    const [lf, lb] = s.lift ?? [0, 0];
+    const half = (s.spread ?? 0) / 2;
+    const soles: [{ x: number; y: number }, { x: number; y: number }] = [{ x: s.x + half, y: s.y - lf }, { x: s.x - half, y: s.y - lb }];
+    out.push(...tracker.update([{ id: 'a', feet: { x: s.x, y: s.y }, soles, grounded: s.grounded, alive: s.alive ?? true }], t0 + (i * 1000) / 60));
   }
   return out;
 }
@@ -16,12 +22,16 @@ describe('L2 dust puffs (client)', () => {
     expect(feed(() => ({ x: 5, y: 17, grounded: true }), 120)).toEqual([]);
   });
 
-  it('running: a small puff behind the feet every ~1.2 m', () => {
-    const puffs = feed((i) => ({ x: 5 + (5 * i) / 60, y: 17, grounded: true }), 60); // 5 m/s for 1 s
-    const run = puffs.filter((p) => p.why === 'run');
-    expect(run.length).toBeGreaterThanOrEqual(3);
-    expect(run.length).toBeLessThanOrEqual(5);
-    expect(run.every((p) => p.dir === -1)).toBe(true); // moving right: dust goes left
+  it('running: a small puff each time the foot behind pushes off (funny legs), drifting back', () => {
+    // 5 m/s for 1 s; feet 0.6 m apart; the BACK foot lifts every 10 frames (a push-off), the front foot stays down
+    const puffs = feed((i) => ({ x: 5 + (5 * i) / 60, y: 17, grounded: true, spread: 0.6, lift: [0, i % 10 < 5 ? 0 : 0.2] }), 60);
+    const steps = puffs.filter((p) => p.why === 'step');
+    expect(steps.length).toBe(6); // (lifts at frames 5, 15, ... 55)
+    expect(steps.every((p) => p.dir === -1)).toBe(true); // moving right: dust goes left
+    expect(steps.every((p) => p.at.x < 5 + (5 * 60) / 60)).toBe(true);
+    // the FRONT foot lifting (stepping forward) is no push-off; walking slowly isn't either
+    expect(feed((i) => ({ x: 5 + (5 * i) / 60, y: 17, grounded: true, spread: 0.6, lift: [i % 10 < 5 ? 0 : 0.2, 0] }), 60).filter((p) => p.why === 'step')).toEqual([]);
+    expect(feed((i) => ({ x: 5 + (1 * i) / 60, y: 17, grounded: true, spread: 0.6, lift: [0, i % 10 < 5 ? 0 : 0.2] }), 60).filter((p) => p.why === 'step')).toEqual([]);
   });
 
   it('a real jump puffs on take-off and on landing; a mid-stride lift does neither', () => {

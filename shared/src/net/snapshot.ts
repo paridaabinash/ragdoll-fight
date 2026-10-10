@@ -38,6 +38,8 @@ export interface NetPlayer {
   lost: number;
   dents: number;
   legStage: number;
+  /** L7: the leg being dragged right now (the limp; or a leg broken by melee), drawn bandaged with its foot scraping. */
+  dragLeg: 'front' | 'back' | null;
   /** L5: the gun, or the melee weapon after a critical hit (WEAPONS index), and limbs broken by melee (part bits). */
   weapon: Weapon;
   broken: number;
@@ -117,6 +119,7 @@ export function captureSnapshot(world: GameWorld, movables: MovableBody[]): Snap
       lost: partBits(PART_NAMES.filter((n) => p.lost.has(n))),
       dents: partBits([...(world.damage.get(id)?.dents ?? [])]),
       legStage: world.damage.get(id)?.legStage ?? 0,
+      dragLeg: st.alive ? p.mods.dragLeg : null,
       weapon: world.damage.get(id)?.weapon ?? 'gun',
       broken: partBits([...(world.damage.get(id)?.broken ?? [])]),
       kills: st.kills,
@@ -182,7 +185,8 @@ export function encodeSnapshot(s: SnapshotData): Uint8Array {
     dv.setUint8(o++, Math.max(0, Math.min(255, Math.round(p.reload))));
     dv.setUint16(o, p.lost & 0xffff, true);
     dv.setUint16(o + 2, p.dents & 0xffff, true);
-    dv.setUint8(o + 4, p.legStage & 0xff);
+    // (L7: the leg stage in the low 4 bits; 0x10 = the front leg drags, 0x20 = the back leg drags)
+    dv.setUint8(o + 4, (p.legStage & 0x0f) | (p.dragLeg === 'front' ? 0x10 : p.dragLeg === 'back' ? 0x20 : 0));
     dv.setUint8(o + 5, WEAPONS.indexOf(p.weapon));
     dv.setUint16(o + 6, p.broken & 0xffff, true);
     o += 8;
@@ -241,7 +245,9 @@ export function decodeSnapshot(bytes: Uint8Array): SnapshotData | null {
     const reload = dv.getUint8(o++);
     const lost = dv.getUint16(o, true);
     const dents = dv.getUint16(o + 2, true);
-    const legStage = dv.getUint8(o + 4);
+    const legByte = dv.getUint8(o + 4);
+    const legStage = legByte & 0x0f;
+    const dragLeg = legByte & 0x10 ? 'front' : legByte & 0x20 ? 'back' : null;
     const weapon = WEAPONS[dv.getUint8(o + 5)] ?? 'gun';
     const broken = dv.getUint16(o + 6, true);
     o += 8;
@@ -270,6 +276,7 @@ export function decodeSnapshot(bytes: Uint8Array): SnapshotData | null {
       lost,
       dents,
       legStage,
+      dragLeg,
       weapon,
       broken,
       kills,

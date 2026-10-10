@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { colorOfSlot, GRAVITY_Y, LIMB, PART_NAMES, PART_SHAPES, PLAYER_COLORS, RAGDOLL, type ArenaPalette, type HatKind, type HazardDef, type Pose, type StaticShape, type Surface, type Vec2 } from '@ragdoll/shared';
+import { colorOfSlot, GRAVITY_Y, LIMB, PART_NAMES, PART_SHAPES, PLAYER_COLORS, RAGDOLL, type ArenaPalette, type HatKind, type HazardDef, type Pose, type StaticShape, type Surface, type Vec2, type SpecialKind } from '@ragdoll/shared';
 import { px } from './draw';
 import { drawGun, drawMelee, gunOf, MELEE_LOOK } from './gun-draw';
 
@@ -27,6 +27,10 @@ export const LOOK = {
   limbWidth: 0.14,
   /** The torso is a thicker stick (its hitbox is 0.4 m wide). */
   torsoWidth: 0.2,
+  /** L7: a whole leg is drawn as one smooth curve hip → knee → foot, in this many short sticks. */
+  legSegments: 8,
+  /** L7: just after landing the body is drawn this much wider / shorter (share), easing out over `ms`. */
+  squash: { wider: 0.08, shorter: 0.1, ms: 140 },
   /** Back limbs are this much darker, for depth. */
   backShade: 0.68,
   /** Dead: the body turns this dark and fades to this alpha (no X eyes). */
@@ -40,6 +44,8 @@ export const LOOK = {
 export interface BodyView {
   /** One pose per part, in PART_NAMES order. */
   parts: Pose[];
+  /** L7: a moment after landing, 0..1: the body is drawn a little squashed (shorter and wider), from the feet. */
+  squash?: number;
   facing: 1 | -1;
   alive: boolean;
   color: number;
@@ -52,7 +58,7 @@ export interface BodyView {
   /** Part index drawn white this frame (the 2-frame hit flash), if any. */
   flash?: number;
   /** L3: the gun in the front hand: reload progress (0 = just fired .. 1 = ready) and a loaded special round's colour. */
-  gun?: { ready: number; special?: number | null };
+  gun?: { ready: number; special?: SpecialKind | null };
   /**
    * L4 body damage (bits by PART_NAMES index): parts shot off (drawn where they lie, with a flat cut; a lost shin
    * leaves a thigh stump), parts dented by a glove (drawn bent), and bullet holes (part index + spot in its frame).
@@ -64,12 +70,17 @@ export interface BodyView {
   melee?: 'bat' | 'mace';
   /** L5: limbs broken by melee hits (bits by PART_NAMES index of the upper part): a white crack at the elbow / knee. */
   broken?: number;
+  /** L7: the leg being dragged (the limp): drawn wrapped in a white bandage. */
+  bandaged?: 'front' | 'back' | null;
 }
 
 /** L4 damage look (meters / shades): the flat cut at a stump or a shot-off piece, a dent's bend, a hole. */
 export const DAMAGE_LOOK = {
   /** Cut faces are this much darker than the part. */
   cutShade: 0.45,
+  /** L7: a leg stump's end: a bright cap (no blood: cartoon), so a hopping player stands out across the arena. */
+  stumpCap: 0xffd1dc,
+  stumpCapRadius: 0.075,
   /** How far a dented limb bends sideways at its middle. */
   dentBend: 0.12,
   holeRadius: 0.032,
@@ -101,11 +112,38 @@ function stick(g: Phaser.GameObjects.Graphics, a: Vec2, b: Vec2, color: number, 
   g.fillStyle(color, 1).fillCircle(px(a.x), px(a.y), w / 2).fillCircle(px(b.x), px(b.y), w / 2);
 }
 
+/**
+ * L7: when each body last landed (after a real jump or fall, at least `minAirTicks` in the air), for the landing squash.
+ * Cosmetic: from what's drawn (the snapshot's or the local world's grounded flag).
+ */
+export class LandingSquash {
+  private readonly bodies = new Map<string, { airSince: number | null; landedAt: number }>();
+  constructor(private readonly minAirTicks = 12) {}
+
+  /** This frame's squash (0..1) for body `id`, given whether it's on the ground at `tick`. */
+  update(id: string, grounded: boolean, tick: number, nowMs: number): number {
+    let b = this.bodies.get(id);
+    if (!b) this.bodies.set(id, (b = { airSince: null, landedAt: -Infinity }));
+    if (!grounded) b.airSince ??= tick;
+    else if (b.airSince !== null) {
+      if (tick - b.airSince >= this.minAirTicks) b.landedAt = nowMs;
+      b.airSince = null;
+    }
+    return Math.max(0, 1 - (nowMs - b.landedAt) / LOOK.squash.ms);
+  }
+}
+
 /** The colour a part is drawn in (front or back shade), e.g. for the chips of a hit on it. */
 export function partColor(color: number, partIndex: number): number {
   const n = PART_NAMES[partIndex];
   return n && n.includes('Back') ? shade(color, LOOK.backShade) : color;
 }
+
+/**
+ * L7 bandage on a dragged leg: off-white cloth, a shaded side and seams; wraps `wider` than the leg, one per `turn` m,
+ * covering `cover` of each part's length, slanted by `slant` (share of a wrap's height).
+ */
+const BANDAGE_LOOK = { cloth: 0xf1ede2, shade: 0xd6cfbf, seam: 0xa99f8a, wider: 1.3, turn: 0.11, cover: 0.86, slant: 0.35 } as const;
 
 /** Draws one player: back limbs (darker), torso, front limbs, head. Flat colour, no outline, no face. */
 export function drawBody(g: Phaser.GameObjects.Graphics, b: BodyView): void {
@@ -140,13 +178,94 @@ export function drawBody(g: Phaser.GameObjects.Graphics, b: BodyView): void {
       stick(g, mid, end, c, LOOK.limbWidth);
     } else stick(g, top, end, c, LOOK.limbWidth);
     if (lower && lost(lower)) cut(end, dir, color); // the stump / the arm where the forearm was shot off
+    if (isThigh && lower && lost(lower)) g.fillStyle(DAMAGE_LOOK.stumpCap, 1).fillCircle(px(end.x), px(end.y), px(DAMAGE_LOOK.stumpCapRadius));
     if (lost(n)) cut(top, dir, color); // a shot-off piece lying around: its cut end
   };
+  /**
+   * L7: a whole leg (thigh + shin, nothing lost or dented) as one smooth curve from the hip through the knee to the
+   * foot, so a bent knee reads as a springy bend, not two sticks; anything else draws its parts as before.
+   */
+  const leg = (upper: 'legFrontUpper' | 'legBackUpper', lowerName: 'legFrontLower' | 'legBackLower', color: number) => {
+    if (lost(upper) || lost(lowerName) || dented(upper) || dented(lowerName) || b.flash === IDX[upper] || b.flash === IDX[lowerName]) {
+      limb(upper, color);
+      limb(lowerName, color);
+      return;
+    }
+    const hyU = (PART_SHAPES[upper] as { hy: number }).hy;
+    const hyL = (PART_SHAPES[lowerName] as { hy: number }).hy;
+    const [hip, kneeA] = ends(b.parts[IDX[upper]], hyU);
+    const [kneeB, foot] = ends(b.parts[IDX[lowerName]], hyL);
+    const knee = { x: (kneeA.x + kneeB.x) / 2, y: (kneeA.y + kneeB.y) / 2 };
+    // a quadratic curve through the knee at its middle: control = 2 * knee - (hip + foot) / 2
+    const c = { x: 2 * knee.x - (hip.x + foot.x) / 2, y: 2 * knee.y - (hip.y + foot.y) / 2 };
+    let prev = hip;
+    for (let i = 1; i <= LOOK.legSegments; i++) {
+      const t = i / LOOK.legSegments;
+      const u = 1 - t;
+      const p = { x: u * u * hip.x + 2 * u * t * c.x + t * t * foot.x, y: u * u * hip.y + 2 * u * t * c.y + t * t * foot.y };
+      stick(g, prev, p, color, LOOK.limbWidth);
+      prev = p;
+    }
+  };
+  /**
+   * L7: a dragged (limp) leg wrapped in a white bandage: overlapping wide wraps a bit wider than the leg, each slanted
+   * like a turn of cloth, a shaded side and a seam where it overlaps the next, and a short loose end at the knee.
+   */
+  const bandageLeg = (upper: 'legFrontUpper' | 'legBackUpper', lowerName: 'legFrontLower' | 'legBackLower') => {
+    const segs: [Vec2, Vec2][] = [
+      ends(b.parts[IDX[upper]], (PART_SHAPES[upper] as { hy: number }).hy),
+      ends(b.parts[IDX[lowerName]], (PART_SHAPES[lowerName] as { hy: number }).hy),
+    ];
+    const B = BANDAGE_LOOK;
+    for (const [a, z] of segs) {
+      const len = Math.hypot(z.x - a.x, z.y - a.y) || 1;
+      const u = { x: (z.x - a.x) / len, y: (z.y - a.y) / len }; // along the leg
+      const n = { x: -u.y, y: u.x }; // across it
+      const half = (LOOK.limbWidth / 2) * B.wider;
+      const turns = Math.max(2, Math.round(len / B.turn));
+      const step = (len * B.cover) / turns;
+      const start = (len * (1 - B.cover)) / 2;
+      for (let i = 0; i < turns; i++) {
+        const d0 = start + i * step;
+        const d1 = d0 + step * 1.15; // (a little overlap with the next turn)
+        const sk = B.slant * step; // the slant of a wrapped turn: one side higher than the other
+        const p = (d: number, side: number) => ({ x: px(a.x + u.x * d + n.x * half * side), y: px(a.y + u.y * d + n.y * half * side) });
+        const quad = [p(d0 - sk, -1), p(d0 + sk, 1), p(d1 + sk, 1), p(d1 - sk, -1)];
+        g.fillStyle(B.cloth, 1).fillPoints(quad as Phaser.Math.Vector2[], true);
+        // the shaded side (the leg is round under the cloth)
+        const mid = (d: number, side: number) => ({ x: px(a.x + u.x * d + n.x * half * side * 0.15), y: px(a.y + u.y * d + n.y * half * side * 0.15) });
+        g.fillStyle(B.shade, 1).fillPoints([mid(d0 + sk * 0.15, 1), p(d0 + sk, 1), p(d1 + sk, 1), mid(d1 + sk * 0.15, 1)] as Phaser.Math.Vector2[], true);
+        // the seam where this turn overlaps the next
+        g.lineStyle(Math.max(1, px(0.012)), B.seam, 1).lineBetween(quad[3].x, quad[3].y, quad[2].x, quad[2].y);
+      }
+    }
+    // a short loose end hanging off the knee, fluttering a little
+    const [, knee] = segs[0];
+    const flap = Math.sin(performance.now() / 160) * 0.03;
+    const tail = [
+      { x: px(knee.x + 0.02), y: px(knee.y) },
+      { x: px(knee.x - 0.04 * b.facing), y: px(knee.y + 0.02) },
+      { x: px(knee.x - (0.16 + flap) * b.facing), y: px(knee.y + 0.13) },
+      { x: px(knee.x - (0.11 + flap) * b.facing), y: px(knee.y + 0.15) },
+    ];
+    g.fillStyle(BANDAGE_LOOK.cloth, 1).fillPoints(tail as Phaser.Math.Vector2[], true);
+    g.lineStyle(Math.max(1, px(0.01)), BANDAGE_LOOK.seam, 1).strokePoints(tail as Phaser.Math.Vector2[], true);
+  };
+  // L7: squashed a moment after landing (from the feet: shorter and wider)
+  const squash = Math.max(0, Math.min(1, b.squash ?? 0));
+  if (squash > 0) {
+    const fx = (b.parts[IDX.legFrontLower].x + b.parts[IDX.legBackLower].x) / 2;
+    const fy = Math.max(b.parts[IDX.legFrontLower].y, b.parts[IDX.legBackLower].y) + (PART_SHAPES.legFrontLower as { hy: number }).hy;
+    g.save();
+    g.translateCanvas(px(fx), px(fy));
+    g.scaleCanvas(1 + LOOK.squash.wider * squash, 1 - LOOK.squash.shorter * squash);
+    g.translateCanvas(-px(fx), -px(fy));
+  }
   g.setAlpha(b.alive ? 1 : LOOK.deadAlpha);
   limb('armBackUpper', back);
   limb('armBackLower', back);
-  limb('legBackUpper', back);
-  limb('legBackLower', back);
+  leg('legBackUpper', 'legBackLower', back);
+  if (b.bandaged === 'back' && !lost('legBackLower')) bandageLeg('legBackUpper', 'legBackLower');
   // torso: a thicker stick from neck to hips (its round ends stay inside the hitbox)
   const ts = PART_SHAPES.torso as { hx: number; hy: number };
   const [neck, hips] = ends(b.parts[IDX.torso], ts.hy - LOOK.torsoWidth / 2);
@@ -156,13 +275,12 @@ export function drawBody(g: Phaser.GameObjects.Graphics, b: BodyView): void {
     stick(g, neck, mid, tint('torso', front), LOOK.torsoWidth);
     stick(g, mid, hips, tint('torso', front), LOOK.torsoWidth);
   } else stick(g, neck, hips, tint('torso', front), LOOK.torsoWidth);
-  limb('legFrontUpper', front);
-  limb('legFrontLower', front);
+  leg('legFrontUpper', 'legFrontLower', front);
+  if (b.bandaged === 'front' && !lost('legFrontLower')) bandageLeg('legFrontUpper', 'legFrontLower');
   limb('armFrontUpper', front);
   limb('armFrontLower', front);
-  const forearm = PART_SHAPES.armFrontLower as { hy: number };
-  if (b.melee && !lost('armFrontLower')) drawMelee(g, { ...gunOf(b.parts[IDX.armFrontLower], forearm.hy), weapon: b.melee, color: front, alpha: b.alive ? 1 : LOOK.deadAlpha });
-  else if (b.gun) drawGun(g, { ...gunOf(b.parts[IDX.armFrontLower], forearm.hy), color: front, ready: b.gun.ready, special: b.gun.special, alpha: b.alive ? 1 : LOOK.deadAlpha });
+  if (b.melee && !lost('armFrontLower')) drawMelee(g, { ...gunOf(b.parts[IDX.armFrontLower]), weapon: b.melee, color: front, alpha: b.alive ? 1 : LOOK.deadAlpha });
+  else if (b.gun) drawGun(g, { ...gunOf(b.parts[IDX.armFrontLower]), color: front, ready: b.gun.ready, special: b.gun.special, alpha: b.alive ? 1 : LOOK.deadAlpha });
   // L5: a limb broken by a melee hit: a white zigzag across its elbow / knee (it also hangs loose: that's the physics)
   for (const n of ['armFrontUpper', 'armBackUpper', 'legFrontUpper', 'legBackUpper'] as const) {
     if (!b.broken || !(b.broken & (1 << IDX[n])) || lost(n)) continue;
@@ -198,6 +316,7 @@ export function drawBody(g: Phaser.GameObjects.Graphics, b: BodyView): void {
   const hasHat = !!b.hat && b.hat !== 'none';
   if (hasHat) drawHat(g, b.hat!, px(h.x), px(h.y), hatR, h.a, b.facing);
   if (b.crown) drawCrown(g, px(h.x), px(h.y), hatR, h.a, hasHat ? 1.55 : 1);
+  if (squash > 0) g.restore();
   g.setAlpha(1);
 }
 
@@ -335,9 +454,12 @@ export function drawMovable(g: Phaser.GameObjects.Graphics, label: string, shape
   g.lineStyle(2, 0x7a5c46, 0.7).lineBetween(pts[0].x, pts[0].y, pts[2].x, pts[2].y).lineBetween(pts[1].x, pts[1].y, pts[3].x, pts[3].y);
 }
 
+/** L7 wind specks: how faint (peak alpha), how big (px), how many (one per this many m²), how fast (wind boxes per s). */
+const WIND_LOOK = { alpha: 0.22, radius: 1.6, areaPerSpeck: 10, speed: 0.35 } as const;
+
 /**
  * Hazards drawn on top of the scenery (S6): trampoline strips, conveyor belts (moving chevrons), wind boxes
- * (drifting streaks) and wrecking-ball chains. Seesaw planks and the balls themselves are bodies (drawMovable).
+ * (a few faint drifting specks) and wrecking-ball chains. Seesaw planks and the balls themselves are bodies (drawMovable).
  */
 export function drawHazards(g: Phaser.GameObjects.Graphics, hazards: HazardDef[], nowMs: number, ballAt: (label: string) => Vec2 | null): void {
   for (const h of hazards) {
@@ -355,17 +477,18 @@ export function drawHazards(g: Phaser.GameObjects.Graphics, hazards: HazardDef[]
         g.lineBetween(px(x - d), px(h.y) - 4, px(x), px(h.y) - 2.5).lineBetween(px(x), px(h.y) - 2.5, px(x - d), px(h.y) - 1);
       }
     } else if (h.kind === 'wind') {
-      g.fillStyle(0xffffff, 0.05).fillRect(px(h.x), px(h.y), px(h.w), px(h.h));
+      // L7 clean look: no tinted box and no streaks (they looked like bullets). A few tiny faint specks drift with the
+      // wind, fading in and out; the aim preview's bend shows the rest.
       const len = Math.hypot(h.ax, h.ay) || 1;
       const dir = { x: h.ax / len, y: h.ay / len };
-      g.lineStyle(2, 0xffffff, 0.3);
-      for (let i = 0; i < 12; i++) {
-        const t = ((nowMs / 1000) * 0.6 + i * 0.137) % 1;
+      const count = Math.max(2, Math.round((h.w * h.h) / WIND_LOOK.areaPerSpeck));
+      for (let i = 0; i < count; i++) {
+        const t = ((nowMs / 1000) * WIND_LOOK.speed + i * 0.137) % 1;
         const sx = h.x + ((i * 0.37) % 1) * h.w;
         const sy = h.y + ((i * 0.61) % 1) * h.h;
         const x = h.x + ((sx - h.x + t * h.w * dir.x + h.w) % h.w);
         const y = h.y + ((sy - h.y + t * h.h * dir.y + h.h) % h.h);
-        g.lineBetween(px(x), px(y), px(x + dir.x * 0.8), px(y + dir.y * 0.8));
+        g.fillStyle(0xffffff, WIND_LOOK.alpha * Math.sin(Math.PI * t)).fillCircle(px(x), px(y), WIND_LOOK.radius);
       }
     } else if (h.kind === 'wrecking_ball') {
       const ball = ballAt(h.label);

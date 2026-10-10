@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { DAMAGE, GUN, MELEE, TRACER_COLOR, type Pose, type Vec2 } from '@ragdoll/shared';
+import { DAMAGE, GUN, handOf, TRACER_COLOR, type Pose, type Vec2, type SpecialKind } from '@ragdoll/shared';
 import { px } from './draw';
+import { drawSpecialIcon } from './special-icons';
 
 /**
  * L3 look: the gun, bullets (tracers) and bullet holes in walls. Drawing only: what a gun does is decided in shared/
@@ -8,6 +9,9 @@ import { px } from './draw';
  */
 
 export const GUN_LOOK = {
+  /** L7: where the muzzle is along the gun (m, before `scale`), and how big a loaded special round is drawn there (m). */
+  muzzle: 0.63,
+  specialIcon: 0.85,
   /**
    * Gun metal: a mid grey (darker than any player colour, lighter than every arena's sky and terrain), so the gun reads
    * both against the bright body and against the dark night arenas. (0x3a3f47 vanished on them in the L3 browser check.)
@@ -82,8 +86,8 @@ export interface GunView {
   color: number;
   /** 0 = just fired .. 1 = ready (the pump moves in between). */
   ready: number;
-  /** Colour of a special round loaded in it (the muzzle band), if any. */
-  special?: number | null;
+  /** L7: the special round loaded in it, if any: drawn big at the muzzle (a glove sticking out, a balloon tied on...). */
+  special?: SpecialKind | null;
   alpha?: number;
 }
 
@@ -107,12 +111,17 @@ export function drawGun(g: Phaser.GameObjects.Graphics, v: GunView): void {
   g.lineStyle(px(0.035 * k), v.color, v.alpha ?? 1).lineBetween(a.x, a.y, b.x, b.y);
   // the pump slides back and forward during the reload: the gun itself shows when it's ready
   poly(PUMP, GUN_LOOK.pumpColor, -GUN_LOOK.pumpTravel * pumpShare(v.ready));
-  if (v.special != null) poly([{ x: 0.55, y: -0.07 }, { x: 0.63, y: -0.07 }, { x: 0.63, y: -0.005 }, { x: 0.55, y: -0.005 }], v.special);
+  if (v.special) {
+    // L7: the loaded special round, big and detailed at the muzzle, so everyone sees it at a glance
+    const muzzle = { x: v.hand.x + c * GUN_LOOK.muzzle * k, y: v.hand.y + s * GUN_LOOK.muzzle * k };
+    drawSpecialIcon(g, v.special, muzzle, v.angle, GUN_LOOK.specialIcon, v.alpha ?? 1, performance.now());
+  }
 }
 
 /** Where a player's gun hand is and where the gun points, from the front forearm's pose (a hanging arm: rotation 0). */
-export function gunOf(lowerArm: Pose, hy: number): { hand: Vec2; angle: number } {
-  return { hand: { x: lowerArm.x - Math.sin(lowerArm.a) * hy, y: lowerArm.y + Math.cos(lowerArm.a) * hy }, angle: lowerArm.a + Math.PI / 2 };
+export function gunOf(lowerArm: Pose): { hand: Vec2; angle: number } {
+  // (the shared hand: the server's melee hit test uses the same point, so what's drawn is what hits)
+  return { hand: handOf(lowerArm), angle: lowerArm.a + Math.PI / 2 };
 }
 
 /** A bullet in flight: a bright tracer head plus a short trail in the shooter's colour. `pos` = the bullet's front. */
@@ -160,9 +169,7 @@ export const readyShare = (ticksLeft: number, total: number = GUN.reloadTicks): 
 /** L5 melee weapons (drawing only: bat and mace hit the same; the look is the difference). Meters. */
 export const MELEE_LOOK = {
   bat: { length: 0.85, grip: 0.028, end: 0.07, wood: 0xc68a4a, grain: 0x9c6a35 },
-  mace: { length: 0.55, handle: 0x5d4037, handleWidth: 0.05, ball: 0.12, spikes: 8, spike: 0.07, head: 0x8d99a6 },
-  /** The reach fan shown instead of the bullet preview while you hold a melee weapon. */
-  reachAlpha: 0.28,
+  mace: { length: 0.76, handle: 0x5d4037, handleWidth: 0.05, ball: 0.12, spikes: 8, spike: 0.07, head: 0x8d99a6 },
   /** A broken limb: a white zigzag across its elbow / knee. */
   crack: 0xffffff,
 } as const;
@@ -213,11 +220,3 @@ export function drawMelee(g: Phaser.GameObjects.Graphics, v: { hand: Vec2; angle
   }
 }
 
-/** Where a melee swing can land (MELEE.reach around the shoulder, MELEE.arc either side of the aim): a faint fan. */
-export function drawReach(g: Phaser.GameObjects.Graphics, shoulder: Vec2, angle: number, color: number): void {
-  const r = px(MELEE.reach);
-  const x = px(shoulder.x);
-  const y = px(shoulder.y);
-  g.fillStyle(color, MELEE_LOOK.reachAlpha * 0.35).slice(x, y, r, angle - MELEE.arc, angle + MELEE.arc, false).fillPath();
-  g.lineStyle(2, color, MELEE_LOOK.reachAlpha).beginPath().arc(x, y, r, angle - MELEE.arc, angle + MELEE.arc, false).strokePath();
-}

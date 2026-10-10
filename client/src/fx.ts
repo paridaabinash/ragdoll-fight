@@ -59,6 +59,12 @@ export class HitFx {
     this.flashes.set(who, { part, frames: FX.flashFrames });
   }
 
+  /** L7: a bullet sparking off a spawn shield: a white star of rays, no chips, nothing flashes. */
+  spark(at: Vec2): void {
+    const base = Math.random() * Math.PI * 2;
+    for (let i = 0; i < FX.spark.rays; i++) this.add({ kind: 'ray', pos: { ...at }, vel: { x: 0, y: 0 }, angle: base + (i / FX.spark.rays) * Math.PI * 2, spin: 0, age: 0, life: FX.spark.life, size: FX.spark.len[0], color: 0xffffff });
+  }
+
   /**
    * L2 dust puff (see dust.ts): a few soft circles in the arena's dust colour that grow, drift and fade.
    * `dir` = which way they drift (-1 / 1), 0 = both ways; `size` 1 = a normal landing.

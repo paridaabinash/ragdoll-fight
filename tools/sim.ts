@@ -24,6 +24,8 @@ import {
   ROTATION,
   seededRandom,
   NO_CONTROLS,
+  SPECIAL,
+  HIT_REACTION,
   r2,
   PART_SHAPES,
   r3,
@@ -43,6 +45,7 @@ import {
   traceShot,
 } from '../shared/src';
 import { GameRoom, type Conn, type RoomOptions } from '../server/src/room';
+import { DEFAULT_ROOM_SETTINGS, GAME_MODES, ROUND } from '@ragdoll/shared';
 import { botFight } from './fight';
 import { fileSink } from './log-files';
 
@@ -369,7 +372,9 @@ const scenarios: Record<string, () => void> = {
     hold(world, LOCAL_PLAYER, { move: 1, jump: true }, 20); // held: a full jump
     hold(world, LOCAL_PLAYER, { move: 1 }, 101);
     hold(world, LOCAL_PLAYER, {}, 60);
-    const lands = since(mark).filter((e) => e.ev === 'land');
+    // (funny legs: a run bounds, so there are small landings before the jump: count from the jump on)
+    const jumpTick = Number(since(mark).find((e) => e.ev === 'jump')?.tick ?? 0);
+    const lands = since(mark).filter((e) => e.ev === 'land' && Number(e.tick) > jumpTick);
     const rebound = Math.max(0, ...lands.slice(1).map((e) => Number(e.rise)));
     console.log(`walk_jump: rise ${lands[0]?.rise} m, rebound ${r3(rebound)} m, falls ${count(mark, 'ragdoll_fall')}`);
     check(count(mark, 'jump') === 1, 'walk_jump: did not jump');
@@ -378,7 +383,7 @@ const scenarios: Record<string, () => void> = {
     world.dispose();
   },
 
-  // Full-power headshot kills in one hit; the shooter gets the kill; body hits do about 20.
+  // Body hits do about 20, a full-power headshot 50 (L7: was a one-hit kill), a second headshot kills; the shooter gets the kill.
   damage() {
     const world = freshWorld('damage');
     run(world, 120);
@@ -393,10 +398,16 @@ const scenarios: Record<string, () => void> = {
     const mark2 = entries.length;
     if (head) shoot(world, head);
     const headHit = since(mark2).find((e) => e.ev === 'damage');
+    // (L7: hits knock the body now: wait until it has stopped swaying, or a ~1 s flight misses the moving head)
+    run(world, 60);
+    for (let i = 0; i < 300 && Math.hypot(world.player(DUMMY_PLAYER).speedX(), world.player(DUMMY_PLAYER).parts.head.linvel().y) > 0.05; i++) world.step();
+    const head2 = findAim(world, (l) => l === `${DUMMY_PLAYER}:head`);
+    if (head2) shoot(world, head2);
     const death = since(mark2).find((e) => e.ev === 'death');
-    console.log(`damage:    torso hit ${body?.amount} (hp ${body?.hp}), headshot ${headHit?.amount}, death ${death?.id} by ${death?.killer} (${death?.cause})`);
+    console.log(`damage:    torso hit ${body?.amount} (hp ${body?.hp}), headshot ${headHit?.amount}, then another: death ${death?.id} by ${death?.killer} (${death?.cause})`);
     check(typeof body?.amount === 'number' && body.amount > 15 && body.amount <= 20, `damage: full-power torso hit did ${body?.amount}`);
-    check(death?.id === DUMMY_PLAYER && death.killer === LOCAL_PLAYER && death.cause === 'arrow', 'damage: full-power headshot did not kill with credit to the shooter');
+    check(typeof headHit?.amount === 'number' && headHit.amount > 40 && headHit.amount <= 50, `damage: full-power headshot did ${headHit?.amount} (L7: 50)`);
+    check(death?.id === DUMMY_PLAYER && death.killer === LOCAL_PLAYER && death.cause === 'arrow', 'damage: torso + two headshots did not kill with credit to the shooter');
     check(world.playerStats(LOCAL_PLAYER).kills === 1 && world.playerStats(DUMMY_PLAYER).deaths === 1, 'damage: score not counted');
     world.dispose();
   },
@@ -431,7 +442,7 @@ const scenarios: Record<string, () => void> = {
   },
 
   // L3: holding the trigger fires on every reload; each shot costs 12: arms drop after ~9 shots and shots are refused;
-  // arms come back at 40 after the rest; aiming itself is free; a jump with too little stamina is refused.
+  // arms come back at 40 after the rest; aiming itself is free; L7: jumps are free (a jump with no stamina still goes).
   stamina() {
     const world = freshWorld('stamina');
     run(world, 60);
@@ -459,20 +470,24 @@ const scenarios: Record<string, () => void> = {
     st.refill(STAMINA.max);
     hold(world, LOCAL_PLAYER, { aim }, 120);
     const aimCost = STAMINA.max - st.stamina;
-    // jump with too little stamina is refused
-    hold(world, LOCAL_PLAYER, {}, 1);
-    st.stamina = STAMINA.jumpCost - 1;
+    // L7: a jump with no stamina at all still goes; and one at 50 leaves it at 50 or more (it only refills)
+    hold(world, LOCAL_PLAYER, {}, 30);
+    st.stamina = 0;
     const mark2 = entries.length;
     hold(world, LOCAL_PLAYER, { jump: true }, 1);
-    const jumpBlocked = since(mark2).find((e) => e.ev === 'jump_blocked');
-    console.log(`stamina:   trigger held: ${shotsToEmpty} shots before the arms dropped (after ${r2(emptyAt / 60)} s), then refused: ${refused}, arms back ${r2(backAfter / 60)} s after the last shot; aiming 2 s cost ${r2(aimCost)}; low-stamina jump ${jumpBlocked?.reason}`);
+    const jumped = since(mark2).some((e) => e.ev === 'jump');
+    hold(world, LOCAL_PLAYER, {}, 60);
+    st.stamina = 50;
+    hold(world, LOCAL_PLAYER, { jump: true }, 1);
+    const afterJump = st.stamina;
+    console.log(`stamina:   trigger held: ${shotsToEmpty} shots before the arms dropped (after ${r2(emptyAt / 60)} s), then refused: ${refused}, arms back ${r2(backAfter / 60)} s after the last shot; aiming 2 s cost ${r2(aimCost)}; a jump with no stamina ${jumped ? 'went' : 'was refused'}`);
     check(shotsToEmpty === Math.ceil(STAMINA.max / GUN.staminaPerShot), `stamina: arms dropped after ${shotsToEmpty} shots, want ${Math.ceil(STAMINA.max / GUN.staminaPerShot)}`);
     check(refused === 'arms_down', `stamina: a shot with the arms down was ${refused ?? 'not refused'}`);
     // rest starts when the last reload is done, then refill to recoverAt
     const wantBack = GUN.reloadTicks + STAMINA.refillDelayTicks + Math.ceil((STAMINA.recoverAt / STAMINA.refillPerSec) * 60);
     check(Math.abs(backAfter - wantBack) <= 3, `stamina: arms back ${backAfter} ticks after the last shot, want ~${wantBack}`);
     check(aimCost === 0, `stamina: aiming cost ${aimCost}`);
-    check(jumpBlocked?.reason === 'stamina', 'stamina: jump with too little stamina was not refused');
+    check(jumped && afterJump >= 50, `stamina: a jump with no stamina was refused, or one cost stamina (${r2(afterJump)} of 50) (L7: jumps are free)`);
     world.dispose();
   },
 
@@ -551,6 +566,7 @@ const scenarios: Record<string, () => void> = {
       return;
     }
     const mark = entries.length;
+    world.playerStats(DUMMY_PLAYER).health = 50; // (L7: a headshot does 50, so this one kills)
     shoot(world, head);
     const limp = world.player(DUMMY_PLAYER).limp;
     run(world, 200);
@@ -863,7 +879,8 @@ const scenarios: Record<string, () => void> = {
     const mark = entries.length;
     const aim = findAim(world, (l) => l.startsWith('victim:'), -30);
     const hit = aim ? shoot(world, aim) : undefined;
-    for (const b of Object.values(victim.parts)) world.push(b, { x: 3 * b.mass(), y: 0 });
+    // (the shove toward the pit: 3 m/s in all, the bullet's own L7 knock included; more flies right over the 2 m gap)
+    for (const b of Object.values(victim.parts)) world.push(b, { x: (3 - HIT_REACTION.knock.arm) * b.mass(), y: 0 });
     // The body respawns 3 s after death (a new ragdoll), so only look at it until shortly before that.
     let deepest = 0;
     let rest = victim.center();
@@ -1580,6 +1597,256 @@ const scenarios: Record<string, () => void> = {
   },
 
   // L2: how movement feels, measured. Each number has a target range (FEEL); the report says pass/fail per line.
+  // L7 step 5: hits you can feel. Each case runs the same body twice, once hit and once not, so the difference is
+  // exactly what the hit did: a runner hit head-on is set back; a head hit pitches the torso back; a leg hit pitches it
+  // forward; a jump hit mid-air lands shorter; a standing body hit in the torso stays up; no joint warnings.
+  hit_reaction() {
+    const BULLET = { x: -32, y: 0 }; // coming from the right, at the body (head-on for a runner going right)
+    const torsoA = (w: GameWorld) => w.player(LOCAL_PLAYER).parts.torso.rotation();
+    /** Runs `ticks` with `controls(i)`, hitting `zone` at tick `at` (or never); returns x, peak torso pitch and falls. */
+    const trial = (name: string, zone: 'head' | 'torso' | 'leg' | null, at: number, ticks: number, controls: (i: number) => Partial<typeof NO_CONTROLS>) => {
+      const w = solo(`hit_reaction:${name}:${zone ?? 'none'}`);
+      const mark = entries.length;
+      const a0 = torsoA(w);
+      let back = 0;
+      let fwd = 0;
+      run(w, ticks, (i) => {
+        w.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, ...controls(i) });
+        if (zone && i === at) w.hitReaction(LOCAL_PLAYER, zone, BULLET);
+        // pitch "back" = away from the shooter (to the left here: a negative torso angle in y-down coordinates)
+        const d = torsoA(w) - a0;
+        back = Math.max(back, -d);
+        fwd = Math.max(fwd, d);
+      });
+      const out = { x: w.player(LOCAL_PLAYER).center().x, back, fwd, falls: count(mark, 'ragdoll_fall'), joints: since(mark).filter((e) => e.ev === 'joint_over_limit').length };
+      w.dispose();
+      return out;
+    };
+    const runR = () => ({ move: 1 as const });
+    const jumpR = (i: number) => ({ move: 1 as const, jump: i < 20 }); // (a held, full jump)
+    // runner hit head-on after reaching full speed (tick 40), measured 0.5 s later
+    const runC = trial('run', null, 40, 70, runR);
+    const runH = trial('run', 'torso', 40, 70, runR);
+    const setBack = runC.x - runH.x;
+    // standing hits
+    const stand = () => ({});
+    const head = trial('stand', 'head', 10, 60, stand);
+    const leg = trial('stand', 'leg', 10, 60, stand);
+    const torso = trial('stand', 'torso', 10, 90, stand);
+    // a running jump hit near the top (tick 15), measured on landing-ish (tick 70)
+    const jumpC = trial('jump', null, 15, 70, jumpR);
+    const jumpH = trial('jump', 'torso', 15, 70, jumpR);
+    const shorter = jumpC.x - jumpH.x;
+    const joints = [runH, head, leg, torso, jumpH].reduce((n, t) => n + t.joints, 0);
+    console.log(
+      `hit_reaction: runner set back ${r2(setBack)} m; head hit pitches back ${r2(head.back)} rad (falls ${head.falls}); leg hit pitches forward ${r2(leg.fwd)} rad (falls ${leg.falls}); ` +
+        `torso hit standing: falls ${torso.falls}; jump hit lands ${r2(shorter)} m shorter; joint warnings ${joints} (knock ${HIT_REACTION.knock.torso} m/s, flinch ${HIT_REACTION.flinchTicks} ticks)`,
+    );
+    check(setBack >= 0.3 && setBack <= 0.6, `hit_reaction: a runner hit head-on was set back ${r2(setBack)} m (want 0.3-0.6)`);
+    check(head.back >= 0.1, `hit_reaction: a head hit pitched the torso back only ${r2(head.back)} rad`);
+    check(leg.fwd >= 0.1, `hit_reaction: a leg hit pitched the torso forward only ${r2(leg.fwd)} rad`);
+    check(torso.falls === 0, 'hit_reaction: a standing body hit in the torso fell over');
+    check(shorter >= 0.2, `hit_reaction: a jump hit mid-air landed only ${r2(shorter)} m shorter`);
+    check(joints === 0, `hit_reaction: ${joints} joint warnings`);
+  },
+
+  // L7: floating on a balloon (the "Everyone Has Balloons" round's 20 s balloon): it hovers under the arena's top
+  // (never off the screen), stays in from the sides, swims up / down with jump / crouch, and the legs run in the air.
+  balloon_float() {
+    const w = freshWorld('balloon_float', false);
+    w.bounds = { width: 30, height: GROUND_Y + 1 };
+    w.addBox('ground', 'fixed', { x: 15, y: GROUND_Y + 0.5 }, { x: 15, y: 0.5 });
+    w.addPlayer(LOCAL_PLAYER, { x: 15, y: GROUND_Y }, 1);
+    run(w, 60);
+    const mark = entries.length;
+    w.specials.giveBalloon(LOCAL_PLAYER, 1200);
+    const p = w.player(LOCAL_PLAYER);
+    const y = () => p.parts.torso.translation().y;
+    let top = Infinity;
+    let hipMin = 0;
+    let hipMax = 0;
+    run(w, 600, () => { // 10 s: up to the cap and hovering there
+      w.setControls(LOCAL_PLAYER, NO_CONTROLS);
+      top = Math.min(top, y());
+    });
+    const hover = y();
+    run(w, 90, () => w.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, crouch: true })); // swim down 1.5 s
+    const down = y() - hover;
+    run(w, 120, () => w.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, jump: true })); // swim up 2 s
+    const upAgain = y();
+    let left = Infinity;
+    run(w, 300, () => { // swim left into the side for 5 s
+      w.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, move: -1 });
+      left = Math.min(left, p.parts.torso.translation().x);
+      const hip = p.jointAngle('hipFront') * p.facing;
+      hipMin = Math.min(hipMin, hip);
+      hipMax = Math.max(hipMax, hip);
+    });
+    const pops = since(mark).filter((e) => e.ev === 'balloon_pop').length;
+    const out = since(mark).filter((e) => e.ev === 'left_arena' || e.ev === 'death').length;
+    console.log(
+      `balloon_float: highest torso y ${r2(top)} (cap ${SPECIAL.balloon.topMargin}), hovers at ${r2(hover)}; swimming down 1.5 s sank ${r2(down)} m, swimming up got back to ${r2(upAgain)}; ` +
+        `swimming left for 5 s stopped at x ${r2(left)} (side margin ${SPECIAL.balloon.sideMargin}); legs ran ${r2(hipMin)}..${r2(hipMax)} rad; pops ${pops}, deaths/left ${out}`,
+    );
+    check(top > SPECIAL.balloon.topMargin - 0.8, `balloon_float: floated up to y ${r2(top)}, above the cap ${SPECIAL.balloon.topMargin}`);
+    check(down > 0.5, `balloon_float: swimming down sank only ${r2(down)} m`);
+    check(upAgain < hover + down - 0.5, 'balloon_float: swimming up did not rise');
+    check(left > SPECIAL.balloon.sideMargin * 0.4, `balloon_float: drifted to x ${r2(left)}, past the side margin`);
+    check(hipMax - hipMin > 0.8, `balloon_float: the legs barely moved in the air (${r2(hipMin)}..${r2(hipMax)})`);
+    check(pops === 0 && out === 0, `balloon_float: ${pops} pops, ${out} deaths / left the arena`);
+    w.dispose();
+  },
+
+  // L7 step 8: how springy the legs are. Running: the knees' biggest bend and the hips' swing range; a running jump:
+  // the legs in the air; the landing: how far the body sinks below its standing height and how fast it springs back.
+  // feel_report and body_report must still pass with 0 falls.
+  leg_report() {
+    const w = feelWorld('leg_report', 10);
+    const p = w.player(LOCAL_PLAYER);
+    const mark = entries.length;
+    const height = () => Math.max(...p.footPoints().map((f) => f.y)) - p.center().y;
+    const stand = height();
+    const k = (n: 'kneeFront' | 'kneeBack' | 'hipFront' | 'hipBack') => p.jointAngle(n) * p.facing;
+    let kneeMax = 0;
+    let hipMin = 0;
+    let hipMax = 0;
+    run(w, 120, (i) => {
+      w.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, move: 1 });
+      if (i < 40) return; // (up to speed first)
+      kneeMax = Math.max(kneeMax, k('kneeFront'), k('kneeBack'));
+      hipMin = Math.min(hipMin, k('hipFront'), k('hipBack'));
+      hipMax = Math.max(hipMax, k('hipFront'), k('hipBack'));
+    });
+    // running height vs standing (the bent running knees lower the body a little)
+    let runLow = 0;
+    run(w, 30, () => {
+      w.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, move: 1 });
+      runLow = Math.max(runLow, stand - height());
+    });
+    // stop, then a standing jump: the legs in the air (after the first 0.2 s), then the landing
+    run(w, 90, () => w.setControls(LOCAL_PLAYER, NO_CONTROLS));
+    let airKnee = 0;
+    let airTicks = 0;
+    // Split Leap: how far the legs open in the air (back hip minus front hip, rad) and the jump's rise
+    let split = 0;
+    const footY0 = p.center().y;
+    let rise = 0;
+    let landedAt = -1;
+    let landKnee = 0;
+    let sink = 0;
+    let back = -1;
+    let over = 0;
+    run(w, 150, (i) => {
+      w.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, jump: i < 20 });
+      if (!p.grounded && i > 12) {
+        airKnee += (k('kneeFront') + k('kneeBack')) / 2;
+        airTicks++;
+      }
+      if (!p.grounded) split = Math.max(split, k('hipBack') - k('hipFront'));
+      rise = Math.max(rise, footY0 - p.center().y);
+      if (landedAt < 0 && p.grounded && i > 12) landedAt = i;
+      if (landedAt >= 0) {
+        landKnee = Math.max(landKnee, k('kneeFront'), k('kneeBack'));
+        const h = height();
+        sink = Math.max(sink, stand - h);
+        if (back < 0 && i > landedAt + 2 && stand - h < 0.02) back = i - landedAt;
+        if (back >= 0) over = Math.max(over, h - stand);
+      }
+    });
+    const falls = count(mark, 'ragdoll_fall');
+    const joints = since(mark).filter((e) => e.ev === 'joint_over_limit').length;
+    console.log(
+      `leg_report: running knees bend up to ${r2(kneeMax)} rad, hips swing ${r2(hipMin)}..${r2(hipMax)} rad; running the body is up to ${r2(runLow * 100)} cm lower; in the air knees average ${r2(airTicks ? airKnee / airTicks : 0)} rad, legs open up to ${r2(split)} rad (rise ${r2(rise)} m); ` +
+        `a standing jump's landing bends the knees ${r2(landKnee)} rad and sinks ${r2(sink * 100)} cm, back up in ${back} ticks (overshoot ${r2(over * 100)} cm); falls ${falls}, joint warnings ${joints}`,
+    );
+    check(falls === 0, `leg_report: the body fell ${falls} times`);
+    check(joints === 0, `leg_report: ${joints} joint warnings`);
+    w.dispose();
+  },
+
+  // L7 step 7: how long a body lives after losing a leg. In a 4-player bot fight each bot has a leg shot down to a stump
+  // (the real ladder: 3 leg hits) a second after it spawns; measured from the loss to its death. (Your play log had a
+  // median 3.3 s: losing a leg was almost a death sentence; steps 3 and 5 should give more time. Target over 6 s.)
+  stump_survival() {
+    const { room, mark } = simRoom('stump_survival', { rotation: [TEST_LAB] });
+    const w = () => room.world;
+    const cutAt = new Map<string, number>();
+    for (let t = 0; t < 3 * 60 * 60; t++) {
+      room.tick();
+      for (const [id, p] of w().players) {
+        if (!id.startsWith('b') || !w().stats.get(id)?.alive || p.stumps.size > 0) continue;
+        const born = cutAt.get(id);
+        if (born === undefined) cutAt.set(id, w().tick + 60);
+        else if (w().tick >= born) {
+          for (let i = 0; i < 3 && p.stumps.size === 0; i++) w().bodyHit(id, 'legFrontLower', 1, 'sim:stump_survival');
+          cutAt.delete(id);
+        }
+      }
+      for (const id of [...cutAt.keys()]) if (!w().stats.get(id)?.alive) cutAt.delete(id);
+    }
+    const log = since(mark);
+    const after: number[] = [];
+    for (const e of log.filter((x) => x.ev === 'part_lost')) {
+      const died = log.find((d) => d.ev === 'death' && d.id === e.id && Number(d.tick) >= Number(e.tick));
+      if (died) after.push((Number(died.tick) - Number(e.tick)) / 60);
+    }
+    after.sort((a, b) => a - b);
+    const median = after.length ? after[Math.floor(after.length / 2)] : 0;
+    console.log(`stump_survival: ${log.filter((x) => x.ev === 'part_lost').length} legs lost, ${after.length} died after, median ${r3(median)} s (quartiles ${r3(after[Math.floor(after.length / 4)] ?? 0)} / ${r3(after[Math.floor((after.length * 3) / 4)] ?? 0)} s)`);
+    check(after.length >= 5, `stump_survival: only ${after.length} deaths after a lost leg`);
+    check(median > 6, `stump_survival: a body lived a median ${r3(median)} s after losing a leg (target over 6 s)`);
+    room.close();
+  },
+
+  // L7 step 6: each melee motion at a standing target at several distances: does it hit, which part, how long from
+  // the click to the hit, and does the mace's sweep trip. (Each swing on a fresh world, so they don't interact.)
+  melee_motions() {
+    const rows: string[] = [];
+    const staggers: number[] = [];
+    let staggerFalls = 0;
+    for (const weapon of ['bat', 'mace'] as const) {
+      const out: string[] = [];
+      let close = 0;
+      let trips = 0;
+      for (const gap of [0.8, 1.2, 1.6, 2.2]) {
+        const w = freshWorld(`melee_motions:${weapon}:${gap}`, false);
+        w.addBox('ground', 'fixed', { x: 20, y: GROUND_Y + 0.5 }, { x: 20, y: 0.5 });
+        w.addPlayer('a', { x: 10, y: GROUND_Y }, 1);
+        w.addPlayer('b', { x: 10 + gap, y: GROUND_Y }, -1);
+        run(w, 60);
+        w.damage.get('a')!.weapon = weapon;
+        w.setControls('a', { ...NO_CONTROLS, aim: { angle: 0 } });
+        run(w, 20);
+        w.stats.get('a')!.readyAt = w.tick;
+        const mark = entries.length;
+        const bx = w.player('b').center().x;
+        w.fire('a', { angle: 0 });
+        run(w, 90);
+        const hit = since(mark).find((e) => e.ev === 'melee_hit');
+        const tripped = since(mark).some((e) => e.ev === 'trip' && e.id === 'b');
+        const staggered = since(mark).some((e) => e.ev === 'stagger' && e.id === 'b');
+        // L7: a hit on the body / head makes the victim stagger back a few steps and stay up
+        const back = w.player('b').center().x - bx;
+        const fell = since(mark).some((e) => e.ev === 'ragdoll_fall' && e.id === 'b');
+        if (staggered) {
+          staggers.push(back);
+          if (fell) staggerFalls++;
+        }
+        out.push(`${gap} m: ${hit ? `${hit.part} after ${Number(hit.tick)} ticks` : 'miss'}${tripped ? ' (tripped)' : ''}${staggered ? ` (staggered back ${r2(back)} m${fell ? ', fell' : ''})` : ''}`);
+        if (hit && gap <= 1.2) close++;
+        if (tripped) trips++;
+        w.dispose();
+      }
+      rows.push(`${weapon}: ${out.join(', ')}`);
+      check(close === 2, `melee_motions: the ${weapon} missed a standing target in reach (0.8 or 1.2 m)`);
+      if (weapon === 'mace') check(trips > 0, 'melee_motions: the mace sweep never tripped anyone');
+      else check(trips === 0, 'melee_motions: the bat tripped someone (only the mace sweep should)');
+    }
+    console.log(`melee_motions: ${rows.join(' | ')}`);
+    check(staggers.length > 0 && staggers.every((d) => d > 0.6 && d < 2.5), `melee_motions: staggers back ${staggers.map(r2).join(', ')} m (want 2-3 steps: 0.6-2.5 m)`);
+    check(staggerFalls === 0, `melee_motions: ${staggerFalls} staggers ended in a fall`);
+  },
+
   feel_report() {
     const f = feelReport();
     const t = FEEL;
@@ -1605,7 +1872,8 @@ const scenarios: Record<string, () => void> = {
   },
 
   bots() {
-    const { room, mark } = simRoom('bots', { rotation: [TEST_LAB] });
+    // (SIM_BOT_SEED=n gives a different but repeatable fight, for tuning BOT numbers over several runs)
+    const { room, mark } = simRoom('bots', { rotation: [TEST_LAB], botSeed: Number(process.env.SIM_BOT_SEED ?? 0) || 0 });
     const times: number[] = [];
     for (let t = 0; t < 7200; t++) {
       const t0 = performance.now();
@@ -1618,6 +1886,11 @@ const scenarios: Record<string, () => void> = {
     const hits = log.filter((e) => e.ev === 'damage' && String(e.by).startsWith('b'));
     const onBots = hits.filter((e) => String(e.id).startsWith('b')).length;
     const onPerson = hits.length - onBots;
+    // L7: how often a bot hits a moving bot it shot at (target: about 25%, BOT.aimError / BOT.aimTicks)
+    const atBots = log.filter((e) => e.ev === 'bot_fire' && String(e.target ?? '').startsWith('b')).length;
+    // (bullet hits only: melee swings and blasts log damage too, with speed 0)
+    const bulletOnBots = hits.filter((e) => String(e.id).startsWith('b') && Number(e.speed) > 0).length;
+    const movingRate = bulletOnBots / Math.max(1, atBots);
     const turns = log.filter((e) => e.ev === 'bot_turn').length;
     const rests = log.filter((e) => e.ev === 'bot_rest' && e.why === 'shots').length;
     const emptied = log.filter((e) => e.ev === 'stamina_empty' && String(e.id).startsWith('b')).length;
@@ -1630,16 +1903,44 @@ const scenarios: Record<string, () => void> = {
     const shattered = log.filter((e) => e.ev === 'body_broken').length;
     const avg = times.reduce((a, b) => a + b, 0) / times.length;
     const p99 = [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.99)];
+    // L7: how long a life lasts (spawn/respawn to death), the "dying too fast" number (was a median 11.8 s for a person)
+    const bornAt = new Map<string, number>();
+    const lives: number[] = [];
+    for (const e of log) {
+      if (e.ev === 'respawn') bornAt.set(String(e.id), Number(e.tick));
+      else if (e.ev === 'death') lives.push((Number(e.tick) - (bornAt.get(String(e.id)) ?? 0)) / 60);
+    }
+    lives.sort((a, b) => a - b);
+    const medianLife = lives.length ? lives[Math.floor(lives.length / 2)] : Infinity;
+    // L7 step 7: time from losing a leg to dying (your play log: a median 3.3 s; the target is over 6 s)
+    const afterLoss: number[] = [];
+    for (const e of log.filter((x) => x.ev === 'part_lost')) {
+      const died = log.find((d) => d.ev === 'death' && d.id === e.id && Number(d.tick) >= Number(e.tick));
+      if (died) afterLoss.push((Number(died.tick) - Number(e.tick)) / 60);
+    }
+    afterLoss.sort((a, b) => a - b);
+    const medianAfterLoss = afterLoss.length ? afterLoss[Math.floor(afterLoss.length / 2)] : null;
+    console.log(`bots:      median life ${r3(medianLife)} s over ${lives.length} deaths; legs lost ${log.filter((x) => x.ev === 'part_lost').length}, then death after a median ${medianAfterLoss === null ? '-' : r3(medianAfterLoss)} s (${afterLoss.length} of them died)`);
     console.log(
-      `bots:      ${room.botCount} bots + 1 idle person, 2 min in ${room.match.info.arena}/${room.match.info.size}: shots ${shots}, hits ${hits.length} (${onBots} on moving bots, ${onPerson} on the still person, ${Math.round((100 * hits.length) / Math.max(1, shots))}%), kills ${botKills}, rested for stamina ${rests}x (arms emptied ${emptied}x), ` +
+      `bots:      ${room.botCount} bots + 1 idle person, 2 min in ${room.match.info.arena}/${room.match.info.size}: shots ${shots}, hits ${hits.length} (${onBots} on moving bots, bullets ${bulletOnBots} = ${Math.round(100 * movingRate)}% of ${atBots} shots at them, ${onPerson} on the still person, ${Math.round((100 * hits.length) / Math.max(1, shots))}%), kills ${botKills}, rested for stamina ${rests}x (arms emptied ${emptied}x), ` +
         `crits ${crits} -> melee swings ${swings}, melee hits ${meleeHits}, bodies shattered ${shattered}, ` +
         `turned at obstacles ${turns}, stuck ${stuck.length}, refused ${refused.length}, room tick avg ${r3(avg)} ms back-to-back (99% under ${r3(p99)} ms; the live paced server reads higher, see tools/tick-probe.ts)`,
     );
     check(shots > 40, `bots: only ${shots} shots in 2 min`);
+    // (one 2-minute fight is noisy: over 4 seeds BOT.aimError 0.3 averages 24%; this band catches a real change)
+    check(movingRate >= 0.12 && movingRate <= 0.38, `bots: hit ${Math.round(100 * movingRate)}% of shots at moving bots (L7 target about 25%)`);
     check(botKills > 0, 'bots: nobody died in 2 min of bot fighting');
     check(stuck.length === 0, `bots: a bot got stuck (${JSON.stringify(stuck[0])})`);
-    check(crits > 0, 'bots: no critical hit in 2 min (air shots crit 25% of the time)');
-    check(crits === 0 || swings > 0, 'bots: guns were knocked away but no bot swung a melee weapon');
+    // L7: crits are rare now (8%, only after 0.25 s in the air): target about 1 a minute in a 4-player room
+    console.log(`bots:      crits ${crits} in 2 min (${r3(crits / 2)} a minute; target about 1)`);
+    check(crits <= 6, `bots: ${crits} critical hits in 2 min (L7 target about 1 a minute)`);
+    // (only bots that lived 5 s after losing the gun count, time to walk to someone: the knock comes in the air and
+    // some fall straight into a pit; the idle person never swings)
+    const disarmedLived = log.filter((c) => c.ev === 'crit' && String(c.who).startsWith('b')).filter((c) => {
+      const died = log.find((e) => e.ev === 'death' && e.id === c.who && Number(e.tick) >= Number(c.tick));
+      return !died || Number(died.tick) - Number(c.tick) > 300;
+    }).length;
+    check(disarmedLived === 0 || swings > 0, `bots: ${disarmedLived} bots lived on with a melee weapon but none swung it`);
     check(refused.length === 0, `bots: the room refused or clamped bot messages (${refused[0]?.ev})`);
     check(avg < 4, `bots: room tick averaged ${r3(avg)} ms (budget 4 ms at 60 Hz)`);
     room.close();
@@ -1670,6 +1971,7 @@ const scenarios: Record<string, () => void> = {
     world.melee.roll = () => 0;
     for (const b of world.player('a').attached()) world.push(b, { x: 0, y: -6 * b.mass() });
     for (let i = 0; i < 10 && world.player('a').grounded; i++) world.step();
+    run(world, MELEE.critMinAirTicks); // (L7: a crit needs 0.25 s in the air)
     world.melee.onBulletHit('a', 'c');
     world.melee.roll = seededRandom(5);
     run(world, 90);
@@ -1709,7 +2011,9 @@ const scenarios: Record<string, () => void> = {
     );
     check(lives.length === 3, `melee: only ${lives.length} of 3 bodies broken in 60 s`);
     check(deaths.every((e) => e.cause === 'shattered' || e.cause === 'melee'), `melee: a death that wasn't from melee: ${deaths.map((e) => e.cause)}`);
-    check(hits.length >= MELEE.shatterAfter * lives.length && hits.length / Math.max(1, swings) > 0.5, `melee: hit rate too low (${hits.length}/${swings})`);
+    // (L7: the bat's upswing often lands on the head, so a body can die of the damage before the shattering hit:
+    // each life needs at least one hit, not always MELEE.shatterAfter)
+    check(hits.length >= lives.length && hits.length / Math.max(1, swings) > 0.5, `melee: hit rate too low (${hits.length}/${swings})`);
     check(meleeSpeed / gunSpeed > 1.1 && meleeSpeed / gunSpeed < 1.45, `melee: melee run speed x${r2(meleeSpeed / gunSpeed)} (want about x${MELEE.runFactor})`);
     check(maxSpeed < 40, `melee: a body part reached ${r2(maxSpeed)} m/s (blowup)`);
     world.dispose();
@@ -1840,6 +2144,49 @@ const scenarios: Record<string, () => void> = {
     check(fresh.every((f) => !f.includes('NOT CLEAN')), 'match: a new match did not start clean (arrows, scores, slot or players)');
     check(frozenDamage === 0, 'match: damage happened during the results');
     room.close();
+  },
+
+  // M3: every game mode through the real room: one still person + 3 bots, a 90 s match each on a random arena. Prints
+  // what each mode's match looked like (for tuning the targets) and checks its rule held.
+  modes() {
+    for (const [i, mode] of GAME_MODES.entries()) {
+      const settings = { ...DEFAULT_ROOM_SETTINGS, mode, arenas: 'random' as const };
+      const { room, mark } = simRoom(`modes:${mode}`, { rotation: ROTATION, settings, seed: 11 + i, match: { lengthTicks: 90 * 60, resultsTicks: 60 } });
+      const arena = room.match.info.arena;
+      for (let t = 0; t < 90 * 60 + 30 && room.match.info.phase === 'playing'; t++) room.tick();
+      const ev = since(mark);
+      const end = ev.find((e) => e.ev === 'match_end');
+      const scores = Object.entries((end?.scores ?? {}) as Record<string, number[]>).map(([id, s]) => `${id} ${s[0]}`).join(' ');
+      const of = (name: string) => ev.filter((e) => e.ev === name);
+      let extra = '';
+      if (mode === 'crown') {
+        extra = `crown changes ${of('crown_change').length}`;
+        check(of('crown_change').length >= 1, 'modes crown: the crown never moved');
+      } else if (mode === 'last_standing') {
+        const rounds = of('round_end');
+        extra = `rounds ${rounds.length} (${rounds.map((e) => `${e.winner ?? 'none'}/${e.why}/${r2(Number(e.ticks) / 60)}s`).join(', ')})`;
+        // (the still person can hide: a round may run to the time limit, then the most health wins it)
+        check(rounds.length >= 1, 'modes last_standing: no round ended in 90 s');
+        check(rounds.every((e) => Number(e.ticks) <= ROUND.maxTicks), 'modes last_standing: a round ran past the time limit');
+        check(!of('respawn').some((e) => !of('round_start').some((s) => s.tick === e.tick)), 'modes last_standing: someone respawned mid-round');
+      } else if (mode === 'melee') {
+        extra = `swings ${of('melee_swing').length}, hits ${of('melee_hit').length}, bullets ${of('fire').length}`;
+        check(of('fire').length === 0, 'modes melee: a bullet was fired');
+        check(of('melee_hit').length > 0, 'modes melee: nobody hit anybody');
+      } else if (mode === 'chaos') {
+        extra = `chaos rounds ${of('modifier_announce').map((e) => e.kind).join(',')}`;
+        check(of('modifier_announce').length >= 2, 'modes chaos: fewer than 2 chaos rounds in 90 s (one every 25 s, each needs 18 s of match left)');
+      } else if (mode === 'teams') {
+        const team = (id: unknown) => room.match.teamOf(String(id));
+        const friendly = of('damage').filter((e) => e.by !== e.id && team(e.by) !== undefined && team(e.by) === team(e.id));
+        extra = `teams ${JSON.stringify(end?.teamScores)}, blocked ${of('damage_blocked').filter((e) => e.reason === 'teammate').length}, friendly damage ${friendly.length}`;
+        check(friendly.length === 0, 'modes teams: a teammate was hurt');
+        check(of('team_join').length === 4, 'modes teams: not everyone got a team');
+      }
+      console.log(`modes:     ${mode.padEnd(13)} ${arena.padEnd(17)} ${end ? `${end.reason} winner ${end.winner} after ${r2(Number(end.ticks) / 60)}s` : 'NOT ENDED'} | ${scores} | ${extra}`);
+      check(!!end, `modes ${mode}: the match didn't end`);
+      room.close();
+    }
   },
 };
 
@@ -2157,12 +2504,16 @@ function feelReport() {
   const coyote = (late: number) => {
     const cw = feelWorld(`feel:coyote_${late}`, 47, true);
     const cp = cw.player(LOCAL_PLAYER);
-    // (past the block's edge at x 50: mid-step both feet leave the ground for a moment while still on top)
-    ticksUntil(cw, { move: 1 }, 240, () => cp.center().x > 50.3 && !cp.grounded);
+    // (past the block's edge at x 50: mid-step both feet leave the ground for a moment while still on top; funny legs:
+    // the long Big Scissor stride's trailing foot can still land on the block after that, so "left it" = every foot
+    // past the edge, in the air)
+    ticksUntil(cw, { move: 1 }, 240, () => cp.center().x > 50.3 && !cp.grounded && cp.footPoints().every((f) => f.x > 50.02));
     const m = entries.length;
     hold(cw, LOCAL_PLAYER, { move: 1 }, late - 1);
     hold(cw, LOCAL_PLAYER, { move: 1, jump: true }, 20);
-    const jumped = count(m, 'jump') > 0;
+    // (only a jump off the edge in mid-air counts: a press too late for that is kept a few ticks (the jump buffer) and
+    // can fire on landing on the floor below, which is the buffer working, not coyote time)
+    const jumped = since(m).some((e) => e.ev === 'jump' && e.coyote !== undefined);
     cw.dispose();
     return jumped;
   };

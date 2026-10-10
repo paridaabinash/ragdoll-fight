@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { networkInterfaces } from 'node:os';
-import { Logger, NET, parseClientMessage, type LogSink, type RoomList, type ServerMessage } from '@ragdoll/shared';
+import { Logger, NET, parseClientMessage, type LogSink, type RoomList, type RoomSettings, type ServerMessage } from '@ragdoll/shared';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { GameRoom, type Conn, type RoomOptions } from './room';
+import { newRoomCode } from './room-codes';
 
 const JOIN_TIMEOUT_MS = 5000;
 
@@ -33,9 +34,9 @@ export function lanUrls(): string[] {
 
 /**
  * Game server on one port:
- * - WebSocket: play. The first message must be `join`; it can name a room, ask for a 'new' one, or quick-join
- *   (the fullest room with space). Each room runs its own fixed 60 Hz loop.
- * - GET /rooms: the room list for the join screen (who is in which room) + this machine's network addresses.
+ * - WebSocket: play. The first message must be `join`; it can name a room by its code, ask for a 'new' one (M1: with
+ *   settings), or quick-join (the fullest public room with space). Each room runs its own fixed 60 Hz loop.
+ * - GET /rooms: the public rooms for the join screen (mode, arena, who's in, the leader) + this machine's network addresses.
  */
 export function createGameServer(opts: {
   port: number;
@@ -44,28 +45,35 @@ export function createGameServer(opts: {
   host?: string;
   /** New rooms: arena rotation (default the Backyard only), match length, filler bots. */
   room?: RoomOptions;
+  /** M1: what quick play's rooms play (default: `room.settings`, else free-for-all in rotation order). */
+  quickSettings?: RoomSettings;
+  /** Random seed source for new rooms (tests: repeatable). */
+  seed?: () => number;
 }): Promise<GameServer> {
   const log = new Logger('server', opts.sink);
   const rooms = new Map<string, GameRoom>();
-  let nextRoom = 1;
   let nextConn = 1;
+  const seed = opts.seed ?? (() => Math.floor(Math.random() * 1e9));
 
-  const newRoom = (): GameRoom => {
-    const room = new GameRoom(`r${nextRoom++}`, opts.sink, (closed) => rooms.delete(closed.id), opts.room);
+  /** A room with its own code; `settings`: what a player picked (quick play: the server's choice). */
+  const newRoom = (settings: RoomSettings | undefined, by: string): GameRoom => {
+    const id = newRoomCode((code) => rooms.has(code));
+    const room = new GameRoom(id, opts.sink, (closed) => rooms.delete(closed.id), { ...opts.room, seed: seed(), ...(settings ? { settings } : {}) });
     rooms.set(room.id, room);
+    log.info('room_created', { room: id, by, settings: room.settings });
     if (opts.autoTick !== false) room.start();
     return room;
   };
 
-  /** Quick play: the fullest open room, so players end up together instead of alone in separate rooms. */
+  /** Quick play: the fullest public room with space, so players end up together instead of alone in separate rooms. */
   const quickRoom = (): GameRoom => {
     let best: GameRoom | null = null;
-    for (const r of rooms.values()) if (!r.full && !r.closed && (!best || r.humans > best.humans)) best = r;
-    return best ?? newRoom();
+    for (const r of rooms.values()) if (!r.full && !r.closed && !r.settings.private && (!best || r.humans > best.humans)) best = r;
+    return best ?? newRoom(opts.quickSettings, 'quick_play');
   };
 
   const roomList = (): RoomList => ({
-    rooms: [...rooms.values()].filter((r) => !r.closed).map((r) => ({ id: r.id, players: r.playerNames(), max: NET.maxPlayers })),
+    rooms: [...rooms.values()].filter((r) => !r.closed && !r.settings.private).map((r) => r.info()),
     lanUrls: lanUrls(),
   });
 
@@ -113,7 +121,7 @@ export function createGameServer(opts: {
       if ('error' in msg || msg.t !== 'join') return refuse('expected_join');
       if (msg.v !== NET.protocolVersion) return refuse(`protocol_mismatch:server_${NET.protocolVersion}_client_${msg.v}`);
       let room: GameRoom;
-      if (msg.room === 'new') room = newRoom();
+      if (msg.room === 'new') room = newRoom(msg.settings ?? opts.quickSettings, `conn${connId}`);
       else if (msg.room) {
         const wanted = rooms.get(msg.room);
         if (!wanted || wanted.closed) return refuse('room_not_found');

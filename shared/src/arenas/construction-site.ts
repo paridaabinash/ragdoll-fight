@@ -108,11 +108,8 @@ export const CONSTRUCTION_SITE: ArenaDef = {
   palette: {
     sky: { top: 0x0a0911, bottom: 0x221a28 },
     horizon: FLOOR,
-    layers: [
-      { kind: 'factory', color: 0x2c2636, depth: 0.12, height: 15 },
-      { kind: 'chains', color: 0x1f1a27, depth: 0.32, height: 8 },
-      { kind: 'factory', color: 0x120f17, depth: 0.58, height: 5 },
-    ],
+    // L7 clean look: no silhouettes (buildings, chains, trees made the screen busy); the sky and glows set the mood
+    layers: [],
     terrain: 0x0d0b12,
     accent: 0xff7043,
     glow: [

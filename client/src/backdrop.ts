@@ -12,8 +12,8 @@ const SLOW_BUILD_MS = { first: 150, later: 40 } as const;
 let builds = 0;
 /** The sky image is this many times the view, so it still covers the screen when the camera zooms out. */
 const SKY_COVER = 1.8;
-/** Sky texture size (px); scaled up, which also softens the glows. */
-const SKY_TEX = { w: 320, h: 180 };
+/** Sky texture size (px); scaled up, which also softens the glows. (L7: 320x180 -> 640x360: aurora rays need it.) */
+const SKY_TEX = { w: 640, h: 360 };
 /** Extra px drawn around the layers so a zoomed-out camera never sees their ends. */
 const MARGIN = 900;
 const DEPTH = { sky: -100, layer: -90 } as const;
@@ -58,6 +58,38 @@ export class Backdrop {
         ctx.fillStyle = rg;
         ctx.fillRect(x - r, y - r, r * 2, r * 2);
       }
+      // L7 aurora curtains: fine vertical rays rising from a folding line, bright at their foot, fading to the top colour.
+      // Drawn on a scratch canvas without blur, then blurred ONCE onto the sky (a blur filter on each of ~1000 rays took
+      // 6-10 s to build: slow_backdrop in the play log).
+      if (p.aurora?.length) {
+        const rays = document.createElement('canvas');
+        rays.width = SKY_TEX.w;
+        rays.height = SKY_TEX.h;
+        const rc = rays.getContext('2d')!;
+        let seed = p.seed;
+        const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+        for (const a of p.aurora) {
+          const base = (edge + a.y / SKY_COVER) * SKY_TEX.h;
+          const fold = (a.fold / SKY_COVER) * SKY_TEX.h;
+          const tall = (a.height / SKY_COVER) * SKY_TEX.h;
+          const W = SKY_TEX.w;
+          for (let x = 0; x <= W; x += 2) {
+            const y = base + fold * Math.sin((x / W) * 2 * Math.PI * 1.6 + a.phase) + fold * 0.35 * Math.sin((x / W) * 2 * Math.PI * 5.5 + a.phase * 2);
+            const h = tall * (0.55 + 0.45 * Math.abs(Math.sin((x / W) * 2 * Math.PI * 3.5 + a.phase * 1.7))) * (0.8 + 0.4 * rnd());
+            const rg = rc.createLinearGradient(0, y, 0, y - h);
+            rg.addColorStop(0, css(a.color, a.alpha * (0.7 + 0.3 * rnd())));
+            rg.addColorStop(0.35, css(a.color, a.alpha * 0.55));
+            rg.addColorStop(0.75, css(a.top, a.alpha * 0.3));
+            rg.addColorStop(1, css(a.top, 0));
+            rc.fillStyle = rg;
+            rc.fillRect(x, y - h, 1.7, h + 1);
+          }
+        }
+        ctx.save();
+        ctx.filter = 'blur(1.5px)';
+        ctx.drawImage(rays, 0, 0);
+        ctx.restore();
+      }
       tex.refresh();
     }
     this.objects.push(
@@ -101,7 +133,7 @@ export class Backdrop {
     const ms = Math.round((performance.now() - t0) * 10) / 10;
     const first = builds++ === 0;
     const limitMs = first ? SLOW_BUILD_MS.first : SLOW_BUILD_MS.later;
-    log.info('backdrop_built', { arena: arena.id, layers: p.layers.length, shapes, glows: p.glow?.length ?? 0, cached, first, ms });
+    log.info('backdrop_built', { arena: arena.id, layers: p.layers.length, shapes, glows: p.glow?.length ?? 0, auroras: p.aurora?.length ?? 0, cached, first, ms });
     if (ms > limitMs) log.warn('slow_backdrop', { arena: arena.id, ms, limitMs, first, layers: p.layers.length, shapes });
   }
 

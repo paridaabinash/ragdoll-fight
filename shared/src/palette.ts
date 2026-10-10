@@ -19,6 +19,18 @@ export const TRACER_COLOR = 0xfff59d;
 
 export const colorOfSlot = (slot: number): number => PLAYER_COLORS[(slot - 1 + PLAYER_COLORS.length) % PLAYER_COLORS.length];
 
+/**
+ * M3 Team Battle: each team wears shades of its own colour (warm reds, cool blues), so you see the team at a glance and
+ * still tell teammates apart. Checked against every arena like the player colours.
+ */
+export const TEAM_COLORS = [
+  [0xff3355, 0xff7a45, 0xff5fa2, 0xffb02e],
+  [0x00e5ff, 0x82b1ff, 0x6a9bff, 0x7cf5d2],
+] as const;
+
+/** A team member's colour: `n` = their place in the team (by slot), so shades don't change while they play. */
+export const teamColor = (team: 0 | 1, n: number): number => TEAM_COLORS[team][n % TEAM_COLORS[team].length];
+
 /** Readability rules for arena palettes (section 6 of modifications.md). */
 export const LOOK_RULES = {
   /**
@@ -32,7 +44,12 @@ export const LOOK_RULES = {
   maxBackdropChroma: 0.3,
   /** Glows are soft light, not lamps you could mistake for something: at most this opaque. */
   maxGlowAlpha: 0.3,
-  layers: { min: 2, max: 3 },
+  /**
+   * L7 clean look: at most one far layer (none in today's arenas). Busy silhouettes behind the fight read as noise
+   * next to flying bullets, so a layer must also stay barely visible against the sky (`maxLayerContrast`).
+   */
+  layers: { min: 0, max: 1 },
+  maxLayerContrast: 1.3,
 } as const;
 
 const channel = (c: number, shift: number) => ((c >> shift) & 0xff) / 255;
@@ -78,25 +95,33 @@ export function backdropColors(p: ArenaPalette): { name: string; color: number }
   // a glow lies over the sky: check it over the brighter sky end, at its strongest
   const brightSky = luminance(p.sky.top) > luminance(p.sky.bottom) ? p.sky.top : p.sky.bottom;
   for (const [i, g] of (p.glow ?? []).entries()) out.push({ name: `glow ${i}`, color: blend(g.color, brightSky, g.alpha) });
+  // L7: aurora curtains, at their brightest (the foot colour at full alpha over the bright sky end)
+  for (const [i, a] of (p.aurora ?? []).entries()) out.push({ name: `aurora ${i}`, color: blend(a.color, brightSky, a.alpha) });
   return out;
 }
 
 /** Problems with a palette (empty = good). Run by the arena validator on every arena that has one. */
 export function paletteProblems(p: ArenaPalette, where = 'palette'): string[] {
   const out: string[] = [];
-  const all = [p.sky.top, p.sky.bottom, p.terrain, p.accent, p.dust, ...p.layers.map((l) => l.color), ...(p.glow ?? []).map((g) => g.color)];
+  const all = [p.sky.top, p.sky.bottom, p.terrain, p.accent, p.dust, ...p.layers.map((l) => l.color), ...(p.glow ?? []).map((g) => g.color), ...(p.aurora ?? []).flatMap((a) => [a.color, a.top])];
   if (!all.every((c) => Number.isInteger(c) && c >= 0 && c <= 0xffffff)) out.push(`${where}: a colour is not a 0xRRGGBB number`);
   if (p.layers.length < LOOK_RULES.layers.min || p.layers.length > LOOK_RULES.layers.max) out.push(`${where}: ${p.layers.length} parallax layers, needs ${LOOK_RULES.layers.min}-${LOOK_RULES.layers.max}`);
   if (!Number.isFinite(p.horizon)) out.push(`${where}: horizon is not a number`);
   p.layers.forEach((l, i) => {
     if (!(l.depth > 0 && l.depth < 1)) out.push(`${where}: layer ${i} depth ${l.depth} must be between 0 and 1`);
     if (!(l.height > 0)) out.push(`${where}: layer ${i} height must be above 0`);
+    const vsSky = Math.max(contrastRatio(l.color, p.sky.top), contrastRatio(l.color, p.sky.bottom));
+    if (vsSky > LOOK_RULES.maxLayerContrast) out.push(`${where}: layer ${i} (${hex(l.color)}) stands out from the sky (contrast ${vsSky.toFixed(2)} > ${LOOK_RULES.maxLayerContrast}); keep the backdrop quiet`);
     const nearer = p.layers[i + 1];
     if (!nearer) return;
     // Shadow Fight depth: farther = moves less and is lighter (hazier)
     if (!(l.depth < nearer.depth)) out.push(`${where}: layer ${i} must move less than layer ${i + 1} (listed far to near)`);
     if (luminance(l.color) < luminance(nearer.color)) out.push(`${where}: layer ${i} (${hex(l.color)}) is darker than the nearer layer ${i + 1} (${hex(nearer.color)}); farther layers are lighter`);
   });
+  for (const [i, a] of (p.aurora ?? []).entries()) {
+    if (!(a.y >= 0 && a.y <= 1 && a.height > 0 && a.height <= 1 && a.fold >= 0)) out.push(`${where}: aurora ${i} must sit on the screen (y 0..1, height 0..1)`);
+    if (!(a.alpha > 0 && a.alpha <= LOOK_RULES.maxGlowAlpha)) out.push(`${where}: aurora ${i} alpha ${a.alpha} must be in (0, ${LOOK_RULES.maxGlowAlpha}]`);
+  }
   for (const [i, g] of (p.glow ?? []).entries()) {
     if (!(g.x >= 0 && g.x <= 1 && g.y >= 0 && g.y <= 1 && g.radius > 0)) out.push(`${where}: glow ${i} must sit on the screen (x, y 0..1, radius > 0)`);
     if (!(g.alpha > 0 && g.alpha <= LOOK_RULES.maxGlowAlpha)) out.push(`${where}: glow ${i} alpha ${g.alpha} must be in (0, ${LOOK_RULES.maxGlowAlpha}]`);
@@ -105,7 +130,11 @@ export function paletteProblems(p: ArenaPalette, where = 'palette'): string[] {
   for (const b of backdropColors(p)) {
     if (luminance(b.color) > LOOK_RULES.maxBackdropLuminance) out.push(`${where}: ${b.name} ${hex(b.color)} is too bright for a backdrop (luminance ${luminance(b.color).toFixed(3)})`);
     if (chroma(b.color) > LOOK_RULES.maxBackdropChroma) out.push(`${where}: ${b.name} ${hex(b.color)} is too colourful for a backdrop`);
-    const front = [...PLAYER_COLORS.map((c, i) => ({ name: `player ${i + 1}`, color: c })), { name: 'tracer', color: TRACER_COLOR }];
+    const front = [
+      ...PLAYER_COLORS.map((c, i) => ({ name: `player ${i + 1}`, color: c })),
+      ...TEAM_COLORS.flatMap((cs, t) => cs.map((c, i) => ({ name: `team ${t} shade ${i + 1}`, color: c }))),
+      { name: 'tracer', color: TRACER_COLOR },
+    ];
     for (const f of front) {
       const ratio = contrastRatio(f.color, b.color);
       if (ratio < LOOK_RULES.minContrast) out.push(`${where}: ${f.name} ${hex(f.color)} on ${b.name} ${hex(b.color)}: contrast ${ratio.toFixed(2)} < ${LOOK_RULES.minContrast}`);
@@ -114,14 +143,11 @@ export function paletteProblems(p: ArenaPalette, where = 'palette'): string[] {
   return out;
 }
 
-/** The look of an arena without its own palette (test arenas, drafts): plain dark blue-grey with hills. */
+/** The look of an arena without its own palette (test arenas, drafts): plain dark blue-grey, no silhouettes. */
 export const DEFAULT_PALETTE: ArenaPalette = {
   sky: { top: 0x0b0e14, bottom: 0x1a2130 },
   horizon: 17,
-  layers: [
-    { kind: 'hills', color: 0x232a38, depth: 0.2, height: 8 },
-    { kind: 'hills', color: 0x161b25, depth: 0.45, height: 4 },
-  ],
+  layers: [],
   terrain: 0x0e1117,
   accent: 0x8fa3bf,
   dust: 0x5c6675,

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GUN, PX_PER_M, type GameEvent, type Rect, type Vec2 } from '@ragdoll/shared';
+import { AIM_POINT, GUN, PX_PER_M, type GameEvent, type Rect, type Vec2 } from '@ragdoll/shared';
 
 /** Drawing helpers shared by the offline scene and the online scene, so both look exactly the same. */
 
@@ -52,6 +52,20 @@ export function drawFace(g: Phaser.GameObjects.Graphics, head: Vec2, headAngle: 
   g.lineBetween(px(head.x), px(head.y), px(head.x + dir.x * 0.18), px(head.y + dir.y * 0.18));
 }
 
+/** L7 spawn shield look (m / alpha): a bubble around the body in the player's colour; blinks while it runs out. */
+const SHIELD_LOOK = { radius: 1.25, up: 0.15, fill: 0.12, edge: 0.75, blinkMs: 90 } as const;
+
+/** L7: the spawn shield bubble around a body (`center`: torso), blinking in its last moments (`ending`). */
+export function drawShield(g: Phaser.GameObjects.Graphics, center: Vec2, color: number, ending: boolean, nowMs: number): void {
+  if (ending && Math.floor(nowMs / SHIELD_LOOK.blinkMs) % 2) return;
+  const x = px(center.x);
+  const y = px(center.y - SHIELD_LOOK.up);
+  const r = px(SHIELD_LOOK.radius);
+  g.fillStyle(color, SHIELD_LOOK.fill).fillCircle(x, y, r);
+  g.lineStyle(2, color, SHIELD_LOOK.edge).strokeCircle(x, y, r);
+  g.lineStyle(2, 0xffffff, SHIELD_LOOK.edge * 0.5).beginPath().arc(x, y, r - 4, -2.4, -1.4).strokePath(); // a glint
+}
+
 /** Health (green; light blue while protected) and stamina (yellow; red while arms are down) above a head. */
 export function drawBars(
   g: Phaser.GameObjects.Graphics,
@@ -71,6 +85,12 @@ export function drawBars(
   };
   bar(0, health, isProtected ? 0x80d8ff : 0x66bb6a);
   bar(1, stamina, armsDown ? 0xef5350 : 0xffca28);
+}
+
+/** L7: the faint dot at your aim point (no cursor, no ring): just enough to see which way you're aiming. */
+export function drawAimDot(g: Phaser.GameObjects.Graphics, at: Vec2 | null, color: number): void {
+  if (!at) return;
+  g.fillStyle(color, AIM_POINT.dotAlpha).fillCircle(at.x * PX_PER_M, at.y * PX_PER_M, AIM_POINT.dotRadius * PX_PER_M);
 }
 
 /**
