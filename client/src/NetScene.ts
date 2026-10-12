@@ -53,6 +53,7 @@ import { launchHud, type HudScene, type LegendRow } from './hud';
 import { PerfTracker, PlayerInput } from './input';
 import { matchBanner, matchTop, modifierHeadline, roundHeadline } from './match-hud';
 import { VoteOverlay } from './vote-overlay';
+import { GameMenu } from './game-menu';
 import type { NetClient, WorldVersion } from './net-client';
 import type { HatProgress } from './progress';
 
@@ -163,6 +164,8 @@ export class NetScene extends Phaser.Scene {
     this.perf = new PerfTracker(this.log);
     this.input2 = new PlayerInput(this, this.log);
     this.vote = new VoteOverlay(this.log, (arena) => this.net.vote(arena));
+    // M6: corner button / Esc: resume or leave (leaving closes the connection; main.ts then shows the home page)
+    new GameMenu(this, this.log, { online: true, leave: () => this.net.leave() });
     ['ONE', 'TWO', 'THREE'].forEach((k, i) => this.input.keyboard!.on(`keydown-${k}`, () => this.vote.pickIndex(this.net.matchAt(Infinity), i)));
     this.events.once('destroy', () => this.vote.destroy());
     this.input.keyboard!.on('keydown-F2', () => {
@@ -525,7 +528,7 @@ export class NetScene extends Phaser.Scene {
       // (M3 Team Battle: grouped by team)
       .sort((a, b) => teamOf(a.slot) - teamOf(b.slot) || b.score - a.score || b.kills - a.kills || a.deaths - b.deaths)
       .map((p) => ({ name: this.nameForSlot(p.slot), color: this.colorOf(p.slot), score: p.score, you: p.slot === this.mySlot, crown: p.crown, alive: p.alive }));
-    const help = now - this.startedAt < HUD_HELP_MS ? '   [mouse] aim  [click/hold] shoot  [A/D] walk  [W/Space] jump  [S] crouch  [T] taunt  [Esc] free the mouse' : '';
+    const help = now - this.startedAt < HUD_HELP_MS ? '   [mouse] aim  [click/hold] shoot  [A/D] walk  [W/Space] jump  [S] crouch  [T] taunt  [Esc] menu' : '';
     const friend = this.shareUrl && this.net.roster.filter((r) => !r.bot).length < 2 ? `   friends join at ${this.shareUrl}/?room=${roomNo}` : '';
     const info = `Room ${roomNo} · ping ${this.net.rttMs} ms${friend}${help}`;
     const lines: string[] = [];

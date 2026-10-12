@@ -329,7 +329,10 @@ export class GameWorld implements RagdollHost {
   roomToStand(feet: Vec2): boolean {
     this.refreshQueries();
     let clear = true;
-    this.physics.intersectionsWithShape({ x: feet.x, y: feet.y - RESPAWN.lift - 1.1 }, 0, new RAPIER.Cuboid(0.45, 1.05), (c) => {
+    // (from just above the feet up to the top of a standing body: RESPAWN.standRoom)
+    const low = RESPAWN.lift + 0.05;
+    const half = (RESPAWN.standRoom - low) / 2;
+    this.physics.intersectionsWithShape({ x: feet.x, y: feet.y - low - half }, 0, new RAPIER.Cuboid(0.45, half), (c) => {
       // (L4: shot-off pieces lying around are loose bits: they don't stop anyone standing there; L5: nor do dropped guns,
       // which players pass through)
       if (c.isSensor() || this.colliderOwners.has(c.handle) || this.labelOf(c).startsWith('piece:') || this.labelOf(c).startsWith('dropped_gun:')) return true;

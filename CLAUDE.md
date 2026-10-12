@@ -1,4 +1,6 @@
-# Ragdoll Archer .io
+# Stickman Multiplayer
+
+(Named "Ragdoll Archer .io" until 2026-10-10.)
 
 2D multiplayer ragdoll archery game. Full design and plan: [ragdoll architecture.md](ragdoll%20architecture.md). Read it before starting a phase.
 

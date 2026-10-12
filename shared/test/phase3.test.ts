@@ -200,7 +200,8 @@ describe('walking', () => {
     // (p1 starts 8 m from the Backyard's thin wall: at the L2 speed, short runs)
     hold(world, { move: 1 }, 40);
     expect(p().speedX()).toBeGreaterThan(WALK.speed * 0.9);
-    expect(GROUND_Y - p().parts.head.translation().y).toBeGreaterThan(1.8);
+    // (upright: a fallen body's head is under 0.5 m. 1.8 -> 1.7 at the 6 m/s run: the run's low point is 1.79 m)
+    expect(GROUND_Y - p().parts.head.translation().y).toBeGreaterThan(1.7);
     hold(world, { move: 1, aim: { angle: deg(-20) } }, 30);
     expect(p().speedX()).toBeCloseTo(WALK.speed, 0);
     const x = p().center().x;

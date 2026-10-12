@@ -7,6 +7,7 @@ import { NetClient } from './net-client';
 import { NetScene } from './NetScene';
 import { HatProgress } from './progress';
 import { createRemoteLogger } from './remote-log';
+import { serverWs } from './server-url';
 import { Menu, type JoinRequest } from './menu/menu';
 import { startCoverArt } from './menu/cover';
 
@@ -32,7 +33,7 @@ async function showMenu(log: Logger): Promise<void> {
   const progress = HatProgress.load(log);
   addEventListener('pagehide', () => progress.save());
   const lag = { ms: Number(params.get('lag')) || 0, jitter: Number(params.get('jitter')) || 0 };
-  const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+  const url = serverWs();
   const menu: Menu = new Menu(log, progress, async (req: JoinRequest) => {
     const net = await NetClient.connect(url, req.name, log, lag, req.room, req.hat, req.settings);
     menu.hide();
@@ -46,7 +47,14 @@ async function showMenu(log: Logger): Promise<void> {
       clearInterval(watch);
       game.destroy(true);
       progress.save();
-      const why = net.closed.reason === 'left' ? '' : `Disconnected: ${net.closed.reason}.`;
+      const left = net.closed.reason === 'left';
+      if (left) {
+        // M6: left on purpose: the room code leaves the address bar too (a reload shouldn't send you back in)
+        const link = new URLSearchParams(location.search);
+        link.delete('room');
+        history.replaceState(null, '', link.size ? `?${link}` : location.pathname);
+      }
+      const why = left ? '' : `Disconnected: ${net.closed.reason}.`;
       menu.show(why);
     }, 500);
   });

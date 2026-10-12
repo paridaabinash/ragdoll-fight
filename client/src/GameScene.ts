@@ -13,6 +13,7 @@ import { BulletHoles, drawBullet, readyShare } from './gun-draw';
 import { DragTrail, shinEnd } from './drag-trail';
 import { launchHud, type HudScene } from './hud';
 import { PerfTracker, PlayerInput } from './input';
+import { GameMenu } from './game-menu';
 
 const MAX_STEPS_PER_FRAME = 5;
 
@@ -87,6 +88,8 @@ export class GameScene extends Phaser.Scene {
     if (this.showcase) return; // (no input: clicks belong to the menu on top)
     if (import.meta.env.DEV) (window as unknown as { scene: GameScene }).scene = this; // for inspecting from devtools
     this.input2 = new PlayerInput(this, this.log);
+    // M6: corner button / Esc: resume or leave (offline: back to the home page)
+    new GameMenu(this, this.log, { online: false, leave: () => (location.href = location.pathname) });
     const kb = this.input.keyboard!;
     kb.on('keydown-F2', () => {
       this.debugOn = !this.debugOn;
@@ -345,7 +348,7 @@ export class GameScene extends Phaser.Scene {
     this.callouts.update((id) => tops.get(id) ?? null);
 
     const c = this.world.counts();
-    const lines = [`OFFLINE ${this.layout.name} (${this.layout.size})  [mouse] aim  [click/hold] shoot  [A/D] walk  [W/Space] jump  [S] crouch  [T] taunt  [R] reset  [F2] debug ${this.debugOn ? 'on' : 'off'}`];
+    const lines = [`OFFLINE ${this.layout.name} (${this.layout.size})  [mouse] aim  [click/hold] shoot  [A/D] walk  [W/Space] jump  [S] crouch  [T] taunt  [R] reset  [Esc] menu  [F2] debug ${this.debugOn ? 'on' : 'off'}`];
     lines.push('score  ' + [...this.world.stats.values()].map((st) => `${st.id} ${st.score} pts (${st.kills} kills / ${st.deaths} deaths)`).join('   '));
     if (this.debugOn) {
       lines.push(`tick ${this.world.tick}  fps ${Math.round(this.game.loop.actualFps)}  arrows flying ${c.flying} stuck ${c.stuck}`);

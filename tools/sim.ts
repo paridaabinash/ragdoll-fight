@@ -2384,11 +2384,16 @@ function limbTrial(mode: 'whole' | 'one_leg' | 'two_stumps' | 'mid_walk') {
   let peak = y0;
   hold(w, LOCAL_PLAYER, { jump: true }, 20, () => (watch(), (peak = Math.min(peak, p.center().y)))); // held: full jump
   hold(w, LOCAL_PLAYER, {}, 71, () => (watch(), (peak = Math.min(peak, p.center().y))));
-  // a lost piece should be lying on the floor, not floating or sunk
-  // (lying flat: its centre is about half its thickness above the floor)
+  // a lost piece should be resting on the floor, not floating or sunk: its lowest point on the floor, whichever way it
+  // lies (flat: half its thickness up; 2026-10-11: one landed standing on its end, half its length up, and the old
+  // "lying flat" check called that floating)
   const piece = [...p.lost][0];
   const half = piece ? PART_SHAPES[piece] : null;
-  const pieceGrounded = !!piece && !!half && 'hx' in half && Math.abs(p.parts[piece].translation().y - (GROUND_Y - half.hx)) < 0.05;
+  const pieceGrounded = !!piece && !!half && 'hx' in half && (() => {
+    const a = p.parts[piece].rotation();
+    const low = p.parts[piece].translation().y + Math.abs(Math.cos(a)) * half.hy + Math.abs(Math.sin(a)) * half.hx;
+    return Math.abs(low - GROUND_Y) < 0.05;
+  })();
   const problems = since(mark).filter((e) => (e.lvl === 'warn' || e.lvl === 'error') && e.ev !== 'joint_over_limit' && e.ev !== 'slow_step').length;
   const result = {
     upright: Math.round((100 * up) / ticks),
@@ -2575,7 +2580,8 @@ function feelReport() {
 /** p1 alone on flat ground, settled. */
 function solo(scenario: string): GameWorld {
   const world = freshWorld(scenario, false);
-  world.addBox('ground', 'fixed', { x: 16, y: GROUND_Y + 0.5 }, { x: 16, y: 0.5 });
+  // (48 m: 3 s of running right from x 8 at 6 m/s ran off the old 32 m floor in limb_loss mid_walk)
+  world.addBox('ground', 'fixed', { x: 24, y: GROUND_Y + 0.5 }, { x: 24, y: 0.5 });
   world.addPlayer(LOCAL_PLAYER, { x: 8, y: GROUND_Y }, 1);
   run(world, 90);
   return world;

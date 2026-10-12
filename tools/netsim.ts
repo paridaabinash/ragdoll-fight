@@ -408,11 +408,15 @@ const scenarios: Record<string, () => Promise<void>> = {
         const bots = ['sam', 'tia', 'uma'].map((n) => new Bot(n));
         for (const b of bots) await b.connect(srv.port);
         await Promise.all(bots.map((b) => b.waitWelcome()));
-        await Promise.all(bots.map((b) => b.fight(8000)));
-        const log = since(mark);
         // (still on both ends: a shot whose preview said "a player" can rightly end in the wall behind when that player
         // steps away, a dodge, not a preview error)
-        const still = log.filter((e) => e.ev === 'arrow_hit' && e.moving === false && e.predMoving === false);
+        const stillHits = () => since(mark).filter((e) => e.ev === 'arrow_hit' && e.moving === false && e.predMoving === false);
+        // fight 8 s, then 4 s more at a time (16 s at most) until there are enough still hits to judge: 2026-10-11, the
+        // faster run (6 m/s) means fewer still moments, and one 8 s fight had only 5 (usually 8-15)
+        await Promise.all(bots.map((b) => b.fight(8000)));
+        for (let more = 0; more < 2 && stillHits().length <= 5; more++) await Promise.all(bots.map((b) => b.fight(4000)));
+        const log = since(mark);
+        const still = stillHits();
         const off = still.filter((e) => Number(e.predErr) > 0.01 || Number(e.predTickErr) !== 0);
         const speeds = bots.map((b) => b.gameSpeed);
         const trouble = log.filter((e) => e.lvl === 'warn' || e.lvl === 'error').filter((e) => !['slow_step', 'rate_limited'].includes(String(e.ev)));

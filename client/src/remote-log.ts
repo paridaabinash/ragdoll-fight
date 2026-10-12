@@ -5,13 +5,15 @@ const FLUSH_MS = 500;
 /**
  * Logger whose lines end up in logs/client-latest.jsonl (via the dev server's /__log).
  * Also captures uncaught errors and console.error, so crashes show up in the log file too.
+ * Built pages (hosted) have no /__log: lines are dropped there instead of piling up in memory.
  */
 export function createRemoteLogger(): Logger {
   const session = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  if (!import.meta.env.DEV) return new Logger('client', () => {});
   let queue: LogEntry[] = [];
 
   const flush = (useBeacon = false) => {
-    if (!queue.length || !import.meta.env.DEV) return;
+    if (!queue.length) return;
     const body = JSON.stringify({ session, entries: queue });
     queue = [];
     if (useBeacon) navigator.sendBeacon('/__log', body);

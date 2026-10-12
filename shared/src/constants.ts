@@ -185,9 +185,15 @@ export const MOVE = {
    */
   unstickTicks: 20,
   unstickSpeed: 0.3,
-  /** Upward speed added to every body part on jump (m/s). Height ≈ v² / 2g ≈ 1.4 m. */
-  jumpSpeed: 7.5,
+  /** Upward speed added to every body part on jump (m/s). 2026-10-11: 7.5 -> 8 (the user: a little more jump power). */
+  jumpSpeed: 8,
   jumpCooldownTicks: 20,
+  /**
+   * 2026-10-11: for this many ticks after a jump the feet still brush the floor (within `groundCheck`) on the way up.
+   * That ground doesn't start a new "time on the ground": it made a running jump look like a stride bound, and letting
+   * go of the run key then braked it hard in mid-air (6 -> 0.8 m/s in 0.2 s, some run-ups only).
+   */
+  liftoffTicks: 4,
   /**
    * L2 jump feel. Coyote time: a jump still works this many ticks after the feet left the ground (walking off an
    * edge). Buffer: a jump pressed this many ticks before landing happens on landing. Tap-or-hold: letting go of jump
@@ -367,6 +373,12 @@ export const RESPAWN = {
   shieldFlickerTicks: 30,
   /** Respawn with the feet this far above the spawn point, so the body never starts touching the ground. */
   lift: 0.05,
+  /**
+   * Room a freshly built standing body needs above its feet (m), for `roomToStand` (repair, swap). Measured: the head's
+   * top is 2.26 m above the feet (probe tools/probes/body-top.ts). 2026-10-11: the check used to stop at 2.2 m, so a
+   * repair under Frozen Lake's ice shelf (2.2 m over the bank) built the head inside the shelf (respawn_blocked).
+   */
+  standRoom: 2.3,
 } as const;
 
 export const APPLE = {
@@ -380,8 +392,8 @@ export const APPLE = {
 } as const;
 
 export const WALK = {
-  /** L2: was 3 m/s (Stick Fight-like snappy running; sim feel_report). */
-  speed: 5.5, // m/s
+  /** L2: was 3 m/s (Stick Fight-like snappy running; sim feel_report). 2026-10-11: 5.5 -> 6 (the user: a little faster). */
+  speed: 6, // m/s
   crouchFactor: 0.4,
   /** Share of normal acceleration while in the air. L2: 0.65 (was 0.3: a jump could only be nudged). */
   airControl: 0.65,
@@ -735,7 +747,7 @@ export const MODE = {
   ffaTarget: 15,
   /** Crown Keeper: seconds holding the crown. */
   crownTarget: 60,
-  /** Last Ragdoll Standing: round wins. */
+  /** Last Stickman Standing: round wins. */
   roundsTarget: 3,
   meleeTarget: 15,
   chaosTarget: 15,
@@ -747,7 +759,7 @@ export const MODE = {
 } as const;
 
 /**
- * M3 Last Ragdoll Standing: the pause after a round (everyone sees who won it), and the longest a round may last: then
+ * M3 Last Stickman Standing: the pause after a round (everyone sees who won it), and the longest a round may last: then
  * the player with the most health left wins it (a tie: nobody). Sim `modes`: a round with no time limit stalled for
  * over a minute when two players couldn't reach each other; most rounds end in 20-30 s.
  */

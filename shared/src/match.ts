@@ -1,6 +1,6 @@
 import { arenaLayout, arenaSizeFor, type ArenaDef, type ArenaSize } from './arena';
 import { MODIFIER, ROOM, ROUND } from './constants';
-import { modifierOrder, type Award, type BestMoment, type ModifierInfo } from './spice';
+import { modeChaosOrder, type Award, type BestMoment, type ModifierInfo } from './spice';
 import { buildArena } from './level';
 import type { Logger } from './log';
 import { seededRandom } from './bot';
@@ -268,7 +268,7 @@ export class Match {
       if (since > 0 && Number.isInteger(k)) {
         const start = tick + MODIFIER.announceTicks;
         if (start + length > this.info.endTick) return false; // not enough match left
-        const order = modifierOrder(this.info.number).filter((x) => !this.rules.chaosSkip.includes(x));
+        const order = modeChaosOrder(this.info.number, this.rules.chaosSkip);
         const kind = order[(k - 1) % order.length];
         this.info = { ...this.info, modifier: { kind, announcedAt: tick, start, end: start + length } };
         this.log.info('modifier_announce', { kind, start, end: start + length });

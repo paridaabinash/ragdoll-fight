@@ -127,7 +127,8 @@ export class NetClient {
       ws.onclose = (e) => {
         client.closed = { code: e.code, reason: e.reason || 'connection lost' };
         client.timers.forEach(clearInterval);
-        log.warn('net_closed', { code: e.code, reason: e.reason, clean: e.wasClean });
+        // (leaving on purpose is not a problem)
+        log[e.reason === 'left' ? 'info' : 'warn']('net_closed', { code: e.code, reason: e.reason, clean: e.wasClean });
         if (!welcomed) reject(new Error(e.reason || `connection closed (${e.code})`));
       };
     });

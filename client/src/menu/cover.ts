@@ -188,8 +188,8 @@ class CoverScene extends Phaser.Scene {
     const x = wide ? w * 0.05 : w / 2;
     const y = wide ? h * 0.07 : h * 0.05;
     const style = (color: string, px: number, stroke: string): Phaser.Types.GameObjects.Text.TextStyle => ({ fontFamily: 'system-ui, sans-serif', fontStyle: 'italic 900', fontSize: `${px}px`, color, stroke, strokeThickness: Math.round(px * 0.12) });
-    const top = this.add.text(x, y, 'RAGDOLL', style('#00e5ff', size, '#04363d')).setScrollFactor(0).setOrigin(wide ? 0 : 0.5, 0).setAngle(-3).setShadow(0, 0, 'rgba(0,229,255,0.6)', 24, false, true);
-    const bottom = this.add.text(x + (wide ? size * 0.35 : 0), y + top.height * 0.82, 'ARCHERS', style('#ff2bd6', Math.round(size * 0.68), '#4a0b3f')).setScrollFactor(0).setOrigin(wide ? 0 : 0.5, 0).setAngle(-3).setShadow(0, 0, 'rgba(255,43,214,0.6)', 20, false, true);
+    const top = this.add.text(x, y, 'STICKMAN', style('#00e5ff', size, '#04363d')).setScrollFactor(0).setOrigin(wide ? 0 : 0.5, 0).setAngle(-3).setShadow(0, 0, 'rgba(0,229,255,0.6)', 24, false, true);
+    const bottom = this.add.text(x + (wide ? size * 0.35 : 0), y + top.height * 0.82, 'MULTIPLAYER', style('#ff2bd6', Math.round(size * 0.68), '#4a0b3f')).setScrollFactor(0).setOrigin(wide ? 0 : 0.5, 0).setAngle(-3).setShadow(0, 0, 'rgba(255,43,214,0.6)', 20, false, true);
     return [top, bottom];
   }
 }

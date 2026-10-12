@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0e14" />
-    <title>Ragdoll Archers</title>
+    <title>Stickman Multiplayer</title>
     <style>
       html, body { margin: 0; height: 100%; background: #0b0e14; overflow: hidden; font-family: system-ui, sans-serif; color: #eceff1; }
     </style>
@@ -16,15 +16,16 @@
       <div class="menu-shade"></div>
       <main class="menu-main">
         <header class="logo">
-          <span class="logo-top">RAGDOLL</span>
-          <span class="logo-bottom">ARCHERS<small>.io</small></span>
+          <span class="logo-top">STICKMAN</span>
+          <span class="logo-bottom">MULTIPLAYER</span>
         </header>
         <div id="invite" class="invite" hidden></div>
 
         <div class="menu-grid">
           <!-- character card: live ragdoll, name, hat -->
           <section class="card character" aria-label="Your character">
-            <div id="preview" class="preview" title="Click to poke"></div>
+            <div id="preview" class="preview" title="Try it: mouse aims, click fires, A/D or arrows walk, W/Space jump, S crouch"></div>
+            <div class="hint try">Try it: <b>mouse</b> aims · <b>click</b> fires · <b>A D</b> / <b>← →</b> walk · <b>W</b> / <b>Space</b> jump · <b>S</b> crouch</div>
             <label for="name" class="field-label">Your name</label>
             <input id="name" maxlength="16" autocomplete="nickname" placeholder="archer" />
             <div class="hat-picker">

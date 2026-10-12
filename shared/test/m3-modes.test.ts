@@ -7,6 +7,7 @@ import {
   initPhysics,
   Logger,
   Match,
+  modeChaosOrder,
   MODES,
   MODIFIER,
   RESPAWN,
@@ -152,9 +153,13 @@ describe('M3 game modes', () => {
     expect(match.info.modifier).not.toBeNull();
     expect(log.some((e) => e.ev === 'modifier_announce')).toBe(true);
     match.dispose();
+    // Melee Mayhem never plays the glove round: the rule over many matches (2026-10-11: this used to play 5 chaos rounds,
+    // ~20k ticks and 34 s, past the 30 s test limit), and the match really uses it (its first announce)
+    for (let n = 1; n <= 50; n++) expect(modeChaosOrder(n, MODES.melee.chaosSkip)).not.toContain('glove_only');
     const melee = makeMatch('melee');
-    for (let i = 0; i < 5; i++) steps(melee.match, MODIFIER.everyTicks);
-    expect(melee.log.filter((e) => e.ev === 'modifier_announce').map((e) => e.kind)).not.toContain('glove_only');
+    steps(melee.match, Math.round(MODIFIER.everyTicks * MODES.melee.chaosEvery));
+    const first = melee.log.find((e) => e.ev === 'modifier_announce');
+    expect(first?.kind).toBe(modeChaosOrder(melee.match.info.number, MODES.melee.chaosSkip)[0]);
     melee.match.dispose();
   });
 

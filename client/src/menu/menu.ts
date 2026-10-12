@@ -27,6 +27,8 @@ import { savedHat, saveHat, type HatProgress } from '../progress';
 import { SCENE } from '../skin';
 import { arenaThumb } from './arena-thumb';
 import { CharacterPreview } from './character';
+import { quietLogger } from './quiet-log';
+import { HOSTED, serverHttp } from '../server-url';
 import './menu.css';
 
 const NAME_KEY = 'ragdoll.name';
@@ -133,7 +135,7 @@ export class Menu {
       banner: false,
       audio: { noAudio: true },
       input: { keyboard: false },
-      scene: new GameScene(this.log, arenaLayout(def, 'full'), false, true),
+      scene: new GameScene(quietLogger('menu_bg', this.log), arenaLayout(def, 'full'), false, true),
     });
     this.log.info('menu_background', { arena: def.id });
   }
@@ -172,7 +174,11 @@ export class Menu {
       location.href = `?mode=local&bot=1&arena=${arena}`;
     };
     $('create-close').onclick = () => ($('create').hidden = true);
-    $('create').onclick = (e) => e.target === $('create') && ($('create').hidden = true);
+    // a click on the dark shade around the panel closes it. (A block, not `a && b`: an `onclick` that returns false
+    // cancels the click's default, and that stopped CREATE ROOM from submitting the form.)
+    $('create').onclick = (e) => {
+      if (e.target === $('create')) $('create').hidden = true;
+    };
     $<HTMLFormElement>('create-form').onsubmit = (e) => {
       e.preventDefault();
       this.saveSettings();
@@ -254,20 +260,24 @@ export class Menu {
   private async refreshRooms(): Promise<void> {
     const list = $('rooms');
     try {
-      const res = await fetch('/rooms');
+      const res = await fetch(serverHttp('/rooms'));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as RoomList;
       this.lastRoomsError = '';
       const rooms = [...data.rooms].sort((a, b) => Number(a.players.length >= a.max) - Number(b.players.length >= b.max) || b.players.length - a.players.length);
       list.replaceChildren(...(rooms.length ? rooms.map((r) => this.roomCard(r)) : [el('li', { className: 'empty', textContent: 'No open rooms yet. Press PLAY or create one.' })]));
       $('rooms-count').textContent = rooms.length ? `${rooms.length} room${rooms.length > 1 ? 's' : ''}` : '';
+      // Hosted: friends open this same page (the server's network addresses are private ones, useless to them).
+      // Dev: the dev server's addresses on this network.
       const here = data.lanUrls.find((u) => u.includes(location.hostname));
-      const urls = here ? [here] : data.lanUrls;
+      const urls = HOSTED ? [location.origin] : here ? [here] : data.lanUrls;
       this.shareUrl = urls[0] ?? '';
-      $('share').innerHTML = urls.length ? `Friends on the same network open: ${urls.map((u) => `<code>${u}</code>`).join(' or ')}` : '';
+      const intro = HOSTED ? 'Friends open' : 'Friends on the same network open';
+      $('share').innerHTML = urls.length ? `${intro}: ${urls.map((u) => `<code>${u}</code>`).join(' or ')}` : '';
     } catch (err) {
-      const msg = `Can't reach the game server (via ${location.host}/rooms). Is it running (npm run dev)?`;
+      const msg = HOSTED ? "Can't reach the game server. It may be down or restarting; trying again..." : `Can't reach the game server (via ${location.host}/rooms). Is it running (npm run dev)?`;
       list.replaceChildren(el('li', { className: 'empty', textContent: msg }));
-      if (this.lastRoomsError !== msg) this.log.warn('rooms_unreachable', { host: location.host, err: String(err) });
+      if (this.lastRoomsError !== msg) this.log.warn('rooms_unreachable', { url: serverHttp('/rooms'), err: String(err) });
       this.lastRoomsError = msg;
     }
   }

@@ -49,7 +49,8 @@ describe('L7 step 8: springy legs', () => {
       world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, jump: i < 20 });
       world.step();
     }
-    // (the torso rises 1.031 m in this standing jump with the springy legs on or off: measured both ways, sim `jump`)
-    expect(Number(log.find((e) => e.ev === 'land')?.rise)).toBeCloseTo(1.031, 2);
+    // (the torso rises 1.196 m in this standing jump (sim `jump`);
+    // 1.031 m before the jump power 7.5 -> 8)
+    expect(Number(log.find((e) => e.ev === 'land')?.rise)).toBeCloseTo(1.196, 2);
   });
 });

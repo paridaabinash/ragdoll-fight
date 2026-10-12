@@ -32,7 +32,7 @@ describe('funny legs: Big Scissor walk + Split Leap jump', () => {
     expect(p.speedX()).toBeGreaterThan(5);
   });
 
-  it('a jump opens the legs into the splits around the top, and rises as high as before (1.33 m)', () => {
+  it('a jump opens the legs into the splits around the top, and rises 1.52 m (was 1.33 m before the jump power 7.5 -> 8)', () => {
     const { world, p } = flat();
     const y0 = p.center().y;
     let split = 0;
@@ -44,8 +44,8 @@ describe('funny legs: Big Scissor walk + Split Leap jump', () => {
       rise = Math.max(rise, y0 - p.center().y);
     }
     expect(split).toBeGreaterThan(0.8);
-    expect(rise).toBeGreaterThan(1.28);
-    expect(rise).toBeLessThan(1.38);
+    expect(rise).toBeGreaterThan(1.47);
+    expect(rise).toBeLessThan(1.57);
   });
 
   it('letting go mid-stride (even mid-bound, both feet in the air) still stops quickly, no stumble', () => {
@@ -68,15 +68,20 @@ describe('funny legs: Big Scissor walk + Split Leap jump', () => {
   });
 
   it('a jump keeps its sideways speed when you let go in the air (only a stride bound brakes on landing)', () => {
-    const { world, p } = flat();
-    world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, move: 1 });
-    for (let i = 0; i < 80; i++) world.step();
-    world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, move: 1, jump: true });
-    for (let i = 0; i < 8; i++) world.step();
-    world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, jump: true });
-    const vx = p.speedX();
-    for (let i = 0; i < 12; i++) world.step();
-    expect(p.grounded).toBe(false);
-    expect(p.speedX()).toBeGreaterThan(vx * 0.85);
+    // (every run-up: the jump lands at a different point of the stride. 2026-10-11: with the feet still brushing the
+    // floor the tick after a jump, some run-ups counted as a bound and braked in mid-air; see MOVE.liftoffTicks)
+    for (let runup = 70; runup <= 100; runup += 5) {
+      const { world, p } = flat();
+      world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, move: 1 });
+      for (let i = 0; i < runup; i++) world.step();
+      world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, move: 1, jump: true });
+      for (let i = 0; i < 8; i++) world.step();
+      world.setControls(LOCAL_PLAYER, { ...NO_CONTROLS, jump: true });
+      const vx = p.speedX();
+      for (let i = 0; i < 12; i++) world.step();
+      expect(p.grounded, `run-up ${runup}`).toBe(false);
+      expect(p.speedX(), `run-up ${runup}`).toBeGreaterThan(vx * 0.85);
+      world.dispose();
+    }
   });
 });

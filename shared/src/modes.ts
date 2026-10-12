@@ -68,7 +68,7 @@ export const MODES: Record<GameMode, ModeRules> = {
     chaosSkip: [],
   },
   last_standing: {
-    name: 'Last Ragdoll Standing',
+    name: 'Last Stickman Standing',
     blurb: 'No respawns. Last one alive wins the round.',
     target: MODE.roundsTarget,
     unit: 'round wins',

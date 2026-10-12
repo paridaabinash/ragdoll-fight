@@ -1,5 +1,6 @@
 import { PHYSICS_HZ, type Logger, type MatchInfo } from '@ragdoll/shared';
 import { arenaThumb } from './menu/arena-thumb';
+import { freePointer } from './game-menu';
 
 /**
  * M2: the arena vote on the results screen: the options as cards (picture from the arena data, name, votes so far),
@@ -27,7 +28,7 @@ export class VoteOverlay {
     if (this.shownFor !== m.number) {
       this.shownFor = m.number;
       // the mouse is locked to the game while playing: free it so the cards can be clicked
-      if (document.pointerLockElement) document.exitPointerLock();
+      freePointer(); // (without opening the in-game menu)
       this.log.info('vote_shown', { match: m.number, options: v.options.map((o) => o.id) });
     }
     const left = Math.max(0, Math.ceil(((m.resultsUntil ?? tick) - tick) / PHYSICS_HZ));

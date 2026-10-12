@@ -44,6 +44,11 @@ export function modifierOrder(matchNumber: number): ModifierKind[] {
   return kinds;
 }
 
+/** M3: the chaos rounds a mode plays in a match, in order (`modifierOrder` without the mode's `skip`ped kinds). */
+export function modeChaosOrder(matchNumber: number, skip: readonly ModifierKind[]): ModifierKind[] {
+  return modifierOrder(matchNumber).filter((x) => !skip.includes(x));
+}
+
 // ---- awards ----
 
 /** Per player, per match: what the awards are made of. */

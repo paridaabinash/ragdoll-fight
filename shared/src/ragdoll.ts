@@ -694,7 +694,8 @@ export class Ragdoll {
     }
     this.updateRelaxedLimits();
     this.grounded = this.checkGround();
-    if (this.grounded) this.lastGroundTick = tick;
+    // (the feet brushing the floor just after a jump aren't a landing: see MOVE.liftoffTicks)
+    if (this.grounded && tick - this.lastJumpTick > MOVE.liftoffTicks) this.lastGroundTick = tick;
     if (this.limp) {
       this.balance = 0;
       this.goLimp();
